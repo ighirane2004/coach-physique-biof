@@ -1,4 +1,6 @@
 streamlit
 google-genai
 Pillow
-gTTS
+gtts
+matplotlib
+numpy
