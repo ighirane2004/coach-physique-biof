@@ -102,7 +102,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU (Modifications CRITIQUES sur les graphiques) ---
+# --- 5. CERVEAU (Modifications CRITIQUES sur le comportement) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -112,20 +112,20 @@ SYSTEM_PROMPT = f"""
 {ROLE}
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
-RÈGLES D'ACTION CRUCIALES POUR LES GRAPHIQUES :
-1. **CODE PYTHON OBLIGATOIRE ET CACHÉ** : Génère le code entre ```python ... ```.
+RÈGLES D'ACTION CRUCIALES :
+1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : 
+   - NE GÉNÈRE JAMAIS de code Python (graphique ou molécule) si l'utilisateur ne l'a pas demandé explicitement (ex: "trace", "dessine", "montre la courbe").
+   - Si l'utilisateur donne juste des données ou demande une expression littérale, contente-toi du TEXTE et des formules LaTeX.
 
-2. **PROPORTIONS & ZOOM (MÉCANIQUE/OPTIQUE)** :
-   - Pour les trajectoires, utilise TOUJOURS `plt.gca().set_aspect('equal', adjustable='datalim')`.
-   - **ZOOM MANUEL OBLIGATOIRE** : Ne laisse pas Matplotlib choisir les limites. Calcule les min/max de tes données (ex: X et Y) et définis explicitement `plt.xlim(min_X - marge, max_X + marge)` et `plt.ylim(...)`. Le graphique doit être centré sur la courbe, sans vide inutile.
+2. **SI UN GRAPHIQUE EST DEMANDÉ** :
+   - Génère le code entre ```python ... ``` et cache-le.
+   - **PROPORTIONS** : Utilise `plt.gca().set_aspect('equal', adjustable='datalim')` pour les trajectoires.
+   - **ZOOM** : Calcule les limites (min/max) et impose `plt.xlim(...)` et `plt.ylim(...)` pour centrer sur les données pertinentes.
+   - **VECTEURS** : Adapte le paramètre `scale` dans `plt.quiver` pour que les flèches soient visibles sans être géantes.
 
-3. **VECTEURS (Vitesse $\vec{{v}}$, Accélération $\vec{{a}}$)** :
-   - C'est le point le plus difficile. Les normes de $\vec{{v}}$ et $\vec{{a}}$ sont souvent très différentes.
-   - **NE PAS UTILISER** une échelle fixe (`scale=1`) pour les deux si cela rend l'un invisible ou l'autre géant.
-   - **SOLUTION** : Adapte le paramètre `scale` dans `plt.quiver` pour que la flèche soit visible mais ne sorte pas du graphique. Tu peux utiliser deux commandes `quiver` différentes avec des échelles différentes (et des couleurs différentes) pour $\vec{{v}}$ et $\vec{{a}}$ si nécessaire. L'objectif est la clarté visuelle, pas la rigueur de l'échelle entre $\vec{{v}}$ et $\vec{{a}}$.
+3. **PAS D'IMAGES HALLUCINÉES** : Ne mets JAMAIS de liens `![Alt](...)`.
 
 4. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
-5. **SILENCE** : Affiche le résultat, pas le code.
 """
 
 # --- 6. INTERFACE ---
