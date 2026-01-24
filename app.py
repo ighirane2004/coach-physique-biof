@@ -150,9 +150,9 @@ if prompt_text or user_audio or user_image:
         placeholder = st.empty()
         with st.spinner("Analyse..."):
             try:
-                # --- CORRECTION FINALE : NOM PRÉCIS DU MODÈLE ---
+                # --- CORRECTION : VERSION 001 (LA PLUS STABLE) ---
                 resp = client.models.generate_content(
-                    model="gemini-1.5-flash-002", # Nom officiel version 002 (Stable)
+                    model="gemini-1.5-flash-001",
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT,
                         temperature=0.3,
