@@ -14,6 +14,8 @@ import json
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
+    from rdkit.Chem import rdDepictor # Nécessaire pour la 3D
+    from rdkit.Chem.Draw import rdMolDraw2D # Nécessaire pour les options de dessin avancées
 except ImportError:
     pass
 
@@ -133,7 +135,7 @@ with st.sidebar:
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
 
-    # --- NOUVEAUTÉ : PALETTE MATHÉMATIQUE ---
+    # PALETTE MATHÉMATIQUE
     with st.expander("🧮 Clavier Mathématique"):
         st.caption("Copiez un symbole et collez-le dans le chat.")
         c1, c2, c3, c4 = st.columns(4)
@@ -141,13 +143,11 @@ with st.sidebar:
         with c2: st.code("θ", language="text")
         with c3: st.code("λ", language="text")
         with c4: st.code("π", language="text")
-        
         c5, c6, c7, c8 = st.columns(4)
         with c5: st.code("vec(v)", language="text")
         with c6: st.code("α", language="text")
         with c7: st.code("Ω", language="text")
         with c8: st.code("∞", language="text")
-        
         st.caption("Ou tapez simplement : 'racine', 'alpha', 'delta'...")
 
     st.divider()
@@ -155,7 +155,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. CERVEAU ---
+# --- 6. CERVEAU (Prompt Anti-Zèle et Pro-Cram) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -165,18 +165,17 @@ SYSTEM_PROMPT = f"""
 {ROLE}
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
-RÈGLES D'ACTION :
-1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande = Pas de code Python.
+RÈGLES D'ACTION IMPÉRATIVES :
+1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Si l'élève ne demande pas explicitement un dessin ou une courbe, NE GÉNÈRE AUCUN CODE. Contente-toi du texte et des maths.
+
 2. **SI GRAPHIQUE DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
-   - **PROPORTIONS** : `plt.gca().set_aspect('equal', adjustable='datalim')` pour les trajectoires.
-   - **ZOOM** : Calcule `plt.xlim` et `plt.ylim`.
-   - **VECTEURS** : Adapte le paramètre `scale`.
-3. **COMPRÉHENSION SOUPLE** :
-   - Si l'élève écrit "vec(v)", comprends $\\vec{{v}}$.
-   - Si l'élève écrit "delta", comprends $\\Delta$.
-   - Si l'élève écrit "racine de x", comprends $\\sqrt{{x}}$.
-4. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
+   - **CHIMIE ORGA (CRAM OBLIGATOIRE)** : Si la stéréochimie est importante (R/S, Cram), tu DOIS forcer `rdkit` à dessiner les coins (wedges). 
+     -> *Astuce code :* Utilise `rdDepictor.SetPreferCoordGen(True)` et assure-toi que le SMILES contient les informations stéréochimiques (`@` ou `@@`).
+   - **PHYSIQUE** : `plt.gca().set_aspect('equal')` (trajectoires), `plt.xlim/ylim` (zoom), ajuster `scale` (vecteurs).
+
+3. **COMPRÉHENSION** : Comprends "vec(v)", "delta", "racine de x".
+4. **CONTENU** : Maths ($\LaTeX$).
 5. **PAS D'IMAGES HALLUCINÉES**.
 """
 
@@ -209,12 +208,17 @@ for msg in st.session_state.messages:
         if "code_blocks" in msg and msg["code_blocks"]:
             for code in msg["code_blocks"]:
                 try:
+                    # ON AJOUTE LES IMPORTS RDKIT AVANCÉS
                     exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                     try: 
                         from rdkit import Chem
                         from rdkit.Chem import Draw
+                        from rdkit.Chem import rdDepictor
+                        from rdkit.Chem.Draw import rdMolDraw2D
                         exec_globals["Chem"] = Chem
                         exec_globals["Draw"] = Draw
+                        exec_globals["rdDepictor"] = rdDepictor
+                        exec_globals["rdMolDraw2D"] = rdMolDraw2D
                     except: pass
                     exec(code, exec_globals)
                     st.pyplot(plt.gcf())
@@ -267,12 +271,17 @@ if prompt or img_file:
                 valid_codes = []
                 for code in code_blocks:
                     try:
+                        # ON AJOUTE LES IMPORTS RDKIT AVANCÉS ICI AUSSI
                         exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                         try: 
                             from rdkit import Chem
                             from rdkit.Chem import Draw
+                            from rdkit.Chem import rdDepictor
+                            from rdkit.Chem.Draw import rdMolDraw2D
                             exec_globals["Chem"] = Chem
                             exec_globals["Draw"] = Draw
+                            exec_globals["rdDepictor"] = rdDepictor
+                            exec_globals["rdMolDraw2D"] = rdMolDraw2D
                         except: pass
                         exec(code, exec_globals)
                         st.pyplot(plt.gcf())
