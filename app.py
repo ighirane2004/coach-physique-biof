@@ -9,22 +9,21 @@ import re
 import matplotlib.pyplot as plt
 import numpy as np
 
-# --- 1. CONFIGURATION ---
+# --- CONFIGURATION ---
 try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    st.warning("⚠️ Clé API introuvable.")
+    st.error("Clé API manquante.")
     st.stop()
 
 FICHIER_COURS = "cours_reference.pdf"
 DOSSIER_SCHEMAS = "schémas"
 
-st.set_page_config(page_title="Tuteur Physique BIOF", page_icon="⚛️")
+st.set_page_config(page_title="Tuteur Physique", page_icon="⚛️")
 
-# --- 2. FONCTIONS ---
+# --- FONCTIONS ---
 @st.cache_resource
-def load_knowledge_base():
-    return os.path.exists(FICHIER_COURS)
+def load_knowledge_base(): return os.path.exists(FICHIER_COURS)
 
 def get_images():
     if not os.path.exists(DOSSIER_SCHEMAS): return []
@@ -32,42 +31,102 @@ def get_images():
 
 def executer_code_python(code):
     try:
-        local_vars = {}
-        exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
-        st.pyplot(plt.gcf()) 
+        exec(code, {"plt": plt, "np": np, "st": st}, {})
+        st.pyplot(plt.gcf())
         plt.clf()
-    except Exception as e:
-        st.error(f"Erreur dans le tracé : {e}")
+    except Exception as e: st.error(f"Erreur graphe: {e}")
 
-# --- 3. SÉCURITÉ ---
+# --- IA SETUP ---
+client = genai.Client(api_key=API_KEY)
+txt_images = ", ".join(get_images())
+
+# --- LE PROMPT (La partie qui posait problème) ---
+# J'ai simplifié les guillemets ici pour éviter le bug
+SYSTEM_PROMPT = "Tu es un prof de physique. "
+SYSTEM_PROMPT += "Si l'élève veut un graphe, génère du code Python entre ```python ... ``` avec matplotlib. "
+SYSTEM_PROMPT += "N'utilise pas plt.show(). "
+SYSTEM_PROMPT += f"Si besoin, affiche une image parmi : {txt_images} avec le tag [[AFFICHER:nom_image]]."
+
+# --- INTERFACE ---
 if "auth" not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
-    st.title("🔐 Accès Professeur")
-    mdp = st.text_input("Mot de passe :", type="password")
-    if mdp == "BAC2026":
+    if st.text_input("Mot de passe", type="password") == "BAC2026":
         st.session_state.auth = True
         st.rerun()
     st.stop()
 
-# --- 4. IA & PROMPT ---
-client = genai.Client(api_key=API_KEY)
-liste_imgs = get_images()
-txt_images = ", ".join(liste_imgs)
+st.title("⚛️ Coach Physique BIOF")
+with st.sidebar:
+    if load_knowledge_base(): st.success("Cours chargé")
 
-# --- ATTENTION : C'est ici que l'erreur se produisait ---
-SYSTEM_PROMPT = """
-Tu es un professeur de Physique-Chimie expert (Niveau Bac).
+# --- CHAT ---
+if "messages" not in st.session_state: st.session_state.messages = []
 
-RÈGLES D'INTERACTION :
-1. Pédagogie : Ne donne pas la réponse sèche. Guide l'élève.
-2. Schémas : Si besoin, utilise [[AFFICHER:nom_image.png]] parmi : {images}.
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+        if "figure" in msg: executer_code_python(msg["figure"])
+        if "img_path" in msg: st.image(msg["img_path"])
 
-MODE "TRACEUR DE COURBES" :
-Si l'élève demande de tracer une courbe, génère un code Python entre ```python ... ```.
-Utilise 'numpy' (np) et 'matplotlib.pyplot' (plt).
-Exemple :
-```python
-t = np.linspace(0, 0.01, 500)
-u = 5 * np.cos(2*np.pi*100*t)
-plt.plot(t, u)
-plt.title("Tension")
+if prompt := st.chat_input("Votre question..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"): st.markdown(prompt)
+
+    # Préparation
+    api_content = []
+    if load_knowledge_base():
+        try:
+            f = client.files.upload(file=FICHIER_COURS)
+            api_content.append(types.Content(role="user", parts=[types.Part.from_uri(file_uri=f.uri, mime_type="application/pdf")]))
+        except: pass
+    
+    # Historique
+    for m in st.session_state.messages:
+        api_content.append(types.Content(role="model" if m["role"]=="assistant" else "user", parts=[types.Part.from_text(text=m["content"])]))
+    
+    # Réponse
+    with st.chat_message("assistant"):
+        try:
+            resp = client.models.generate_content(
+                model="gemini-2.0-flash",
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+                contents=api_content
+            )
+            text = resp.text
+            
+            # Gestion Code
+            code = None
+            if "```python" in text:
+                try:
+                    code = text.split("```python")[1].split("```")[0].strip()
+                except: pass
+            
+            # Gestion Image
+            img_show = None
+            if "[[AFFICHER:" in text:
+                try:
+                    nom = text.split("[[AFFICHER:")[1].split("]]")[0].strip()
+                    if os.path.exists(f"{DOSSIER_SCHEMAS}/{nom}"):
+                        img_show = f"{DOSSIER_SCHEMAS}/{nom}"
+                        text = text.replace(f"[[AFFICHER:{nom}]]", "")
+                except: pass
+
+            st.markdown(text)
+            if img_show: st.image(img_show)
+            if code: executer_code_python(code)
+
+            # Audio
+            try:
+                tts = gTTS(text=text.replace("*", ""), lang='fr')
+                audio = io.BytesIO()
+                tts.write_to_fp(audio)
+                st.audio(audio, format='audio/mp3')
+            except: pass
+
+            msg = {"role": "assistant", "content": text}
+            if img_show: msg["img_path"] = img_show
+            if code: msg["figure"] = code
+            st.session_state.messages.append(msg)
+
+        except Exception as e:
+            st.error(f"Erreur : {e}")
