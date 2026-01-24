@@ -19,7 +19,7 @@ except:
 FICHIER_COURS = "cours_reference.pdf"
 DOSSIER_SCHEMAS = "schémas"
 
-st.set_page_config(page_title="Coach Physique", page_icon="⚛️")
+st.set_page_config(page_title="Coach Physique Pro", page_icon="⚛️")
 
 # --- 2. FONCTIONS ---
 @st.cache_resource
@@ -32,30 +32,29 @@ def get_images():
 def executer_code_python(code):
     try:
         local_vars = {}
-        # On définit une taille de figure standard pour éviter les déformations
         plt.figure(figsize=(10, 6))
         exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
         fig = plt.gcf()
         st.pyplot(fig)
-        plt.close(fig) # Important : fermer la figure pour libérer la mémoire
+        plt.close(fig)
     except Exception as e:
         st.error(f"Erreur graphe : {e}")
 
-# --- 3. PROMPT PÉDAGOGIQUE (renforcé) ---
+# --- 3. PROMPT PÉDAGOGIQUE ---
 txt_images = ", ".join(get_images())
 
 SYSTEM_PROMPT = """
-Tu es un professeur de Physique-Chimie expert et rigoureux (Niveau Bac).
+Tu es un professeur de Physique-Chimie expert (Niveau Bac).
 
-RÈGLES ABSOLUES (A respecter sous peine de pénalité) :
-1. INVISIBLE : L'élève ne voit PAS tes documents internes. Ne dis JAMAIS "comme le montre le document" ou "voir figure ci-contre" sauf si tu affiches l'image toi-même.
-2. CODE CACHÉ : Ne montre JAMAIS le code Python. L'élève ne doit voir que le graphique final.
-3. PEDAGOGIE : Ne donne pas la réponse directement. Guide l'élève pas à pas.
-4. COURBES : Si l'élève demande un tracé, génère le code Python entre ```python ... ```.
-   - Pour la MODULATION D'AMPLITUDE : Trace toujours l'enveloppe (signal modulant + composante continue) en rouge pointillé 'r--' par dessus le signal modulé bleu.
-   - Ajoute toujours une grille, un titre et les légendes des axes.
+RÈGLES D'OR :
+1. INPUT : Tu peux recevoir du texte, des images (exercices) ou de l'audio (questions orales). Analyse-les précisément.
+2. INVISIBLE : L'élève ne voit PAS tes documents internes. Ne dis jamais "voir document ci-joint" sauf si tu l'affiches.
+3. CODE CACHÉ : Ne montre JAMAIS le code Python.
+4. COURBES : Pour tracer, génère du code entre ```python ... ```.
+   - Modulation AM : Trace l'enveloppe en rouge pointillé 'r--'.
+   - Ajoute toujours : plt.grid(True), titres et légendes.
 
-Images disponibles (utilise [[AFFICHER:nom_image]] pour les montrer) : {images}
+Images stockées (si besoin) : {images} (tag [[AFFICHER:nom]] pour montrer).
 """.format(images=txt_images)
 
 # --- 4. INTERFACE ---
@@ -66,10 +65,29 @@ if not st.session_state.auth:
         st.rerun()
     st.stop()
 
-st.title("⚛️ Coach Physique BIOF")
-st.caption("Assistant IA - Version Pro")
+st.title("⚛️ Coach Physique & Chimie")
 
-# --- 5. MOTEUR DE CHAT ---
+# --- 5. ZONE MULTIMÉDIA (La nouveauté) ---
+with st.expander("📸 Envoyer une Image ou un Audio (Cliquez pour ouvrir)", expanded=True):
+    tab1, tab2, tab3 = st.tabs(["📁 Importer Image", "📷 Photo", "🎤 Micro"])
+    
+    user_image = None
+    user_audio = None
+    
+    with tab1:
+        uploaded_file = st.file_uploader("Scan ou photo d'exercice", type=["jpg", "png", "jpeg"])
+        if uploaded_file: user_image = Image.open(uploaded_file)
+    
+    with tab2:
+        camera_shot = st.camera_input("Prendre une photo")
+        if camera_shot: user_image = Image.open(camera_shot)
+
+    with tab3:
+        # Note : st.audio_input est disponible sur les versions récentes de Streamlit Cloud
+        audio_val = st.audio_input("Enregistrez votre question")
+        if audio_val: user_audio = audio_val
+
+# --- 6. MOTEUR DE CHAT ---
 client = genai.Client(api_key=API_KEY)
 
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -80,34 +98,79 @@ for msg in st.session_state.messages:
         st.markdown(msg["display_text"])
         if "figure_code" in msg: executer_code_python(msg["figure_code"])
         if "img_path" in msg: st.image(msg["img_path"])
+        # On affiche une petite icône si le message contenait de l'audio ou image
+        if msg.get("has_audio"): st.caption("🎤 *Message vocal envoyé*")
+        if msg.get("has_image"): st.caption("🖼️ *Image envoyée*")
 
-if prompt := st.chat_input("Pose ta question..."):
-    # User message
-    st.session_state.messages.append({"role": "user", "display_text": prompt, "content": prompt})
-    with st.chat_message("user"): st.markdown(prompt)
+# Gestion de l'envoi (Texte OU Audio OU Image)
+# On déclenche si l'utilisateur tape texte OU s'il y a un audio/image en attente
+prompt_text = st.chat_input("Votre message...")
 
-    # Context
+if prompt_text or user_audio or user_image:
+    
+    # 1. Définir le contenu du message utilisateur
+    # Si pas de texte mais de l'audio/image, on met un texte par défaut
+    display_msg = prompt_text if prompt_text else ""
+    if user_audio and not prompt_text: display_msg = "🎤 [Message Vocal]"
+    if user_image and not prompt_text: display_msg = "🖼️ [Image envoyée]"
+    
+    st.session_state.messages.append({
+        "role": "user", 
+        "display_text": display_msg, 
+        "content": display_msg if display_msg else "Analyse ce document/audio.",
+        "has_audio": user_audio is not None,
+        "has_image": user_image is not None
+    })
+    
+    with st.chat_message("user"):
+        st.markdown(display_msg)
+        if user_image: st.image(user_image, width=200)
+
+    # 2. Préparation API (Le gros morceau Multimodal)
     api_content = []
+    
+    # A. Le PDF de cours (Contexte)
     if load_knowledge_base():
         try:
             f = client.files.upload(file=FICHIER_COURS)
             api_content.append(types.Content(role="user", parts=[types.Part.from_uri(file_uri=f.uri, mime_type="application/pdf")]))
         except: pass
     
-    for m in st.session_state.messages:
+    # B. Historique (Texte seulement pour économiser)
+    for m in st.session_state.messages[:-1]:
         api_content.append(types.Content(role="model" if m["role"]=="assistant" else "user", parts=[types.Part.from_text(text=m["content"])]))
     
-    # Réponse
+    # C. Le Message Actuel (Texte + Image + Audio)
+    current_parts = []
+    
+    # Texte
+    if prompt_text: 
+        current_parts.append(types.Part.from_text(text=prompt_text))
+    elif not user_audio: # Si ni texte ni audio, on demande d'analyser l'image
+        current_parts.append(types.Part.from_text(text="Analyse cette image ou réponds à cet audio."))
+
+    # Image
+    if user_image:
+        current_parts.append(types.Part.from_image(image=user_image))
+    
+    # Audio
+    if user_audio:
+        # Lecture des octets audio
+        audio_bytes = user_audio.read()
+        current_parts.append(types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"))
+
+    api_content.append(types.Content(role="user", parts=current_parts))
+
+    # 3. Réponse Assistant
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        with st.spinner("Analyse approfondie..."):
+        with st.spinner("Analyse multimodale..."):
             try:
-                # CHANGEMENT MAJEUR ICI : Modèle 1.5 Pro + Température basse
                 resp = client.models.generate_content(
-                    model="gemini-1.5-pro", # Le cerveau le plus intelligent
+                    model="gemini-1.5-pro",
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT,
-                        temperature=0.3, # Rigueur maximale (moins de fantaisie)
+                        temperature=0.3,
                     ),
                     contents=api_content
                 )
@@ -116,15 +179,14 @@ if prompt := st.chat_input("Pose ta question..."):
                 code_found = None
                 image_found = None
 
-                # Nettoyage Code Python
+                # Nettoyage Code
                 if "```python" in raw_text:
                     parts = raw_text.split("```python")
                     code_part = parts[1].split("```")[0]
-                    # On reconstruit le texte sans le code
                     text_to_display = parts[0] + (parts[1].split("```")[1] if len(parts[1].split("```")) > 1 else "")
                     code_found = code_part
 
-                # Nettoyage Images
+                # Nettoyage Image
                 if "[[AFFICHER:" in text_to_display:
                     match = re.search(r"\[\[AFFICHER:(.*?)\]\]", text_to_display)
                     if match:
@@ -137,7 +199,7 @@ if prompt := st.chat_input("Pose ta question..."):
                 if image_found: st.image(image_found)
                 if code_found: executer_code_python(code_found)
 
-                # Audio
+                # Lecture vocale de la réponse
                 try:
                     tts = gTTS(text=text_to_display.replace("*", ""), lang='fr')
                     audio = io.BytesIO()
