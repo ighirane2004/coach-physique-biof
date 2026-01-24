@@ -237,9 +237,9 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("..."):
+        with st.spinner("Analyse du cours..."):
             try:
-                # CORRECTION ICI : On utilise "gemini-1.5-flash" tout court
+                # --- CORRECTION ICI : On utilise le nom court sans "models/" ---
                 model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
                 
                 response = model.generate_content(prompt)
@@ -269,4 +269,4 @@ if prompt:
                 except: pass
 
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                st.error(f"Erreur technique : {e}")
