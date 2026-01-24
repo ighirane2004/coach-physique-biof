@@ -46,6 +46,7 @@ def executer_code_python(code):
 # --- 3. SÉCURITÉ ---
 if "auth" not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
+    st.title("🔐 Accès Professeur")
     mdp = st.text_input("Mot de passe :", type="password")
     if mdp == "BAC2026":
         st.session_state.auth = True
@@ -55,21 +56,23 @@ if not st.session_state.auth:
 # --- 4. IA & PROMPT ---
 client = genai.Client(api_key=API_KEY)
 liste_imgs = get_images()
+txt_images = ", ".join(liste_imgs)
 
-SYSTEM_PROMPT = f"""
+# NOTE : Les guillemets sont bien fermés ci-dessous
+SYSTEM_PROMPT = """
 Tu es un professeur de Physique-Chimie expert (Niveau Bac).
 
 RÈGLES D'INTERACTION :
 1. Pédagogie : Ne donne pas la réponse sèche. Guide l'élève.
-2. Schémas : Si besoin, utilise [[AFFICHER:nom_image.png]] parmi : {", ".join(liste_imgs)}.
+2. Schémas : Si besoin, utilise [[AFFICHER:nom_image.png]] parmi : {images}.
 
 MODE "TRACEUR DE COURBES" (IMPORTANT) :
 Si l'élève demande de tracer une courbe, un graphe ou une simulation (ex: "trace une modulation", "montre la résonance"), tu dois GÉNÉRER UN CODE PYTHON.
-- Le code doit être entre trois accents graves : ```python ... ```
+- Le code doit être entre trois accents graves.
 - Utilise 'numpy' (alias np) et 'matplotlib.pyplot' (alias plt).
 - Ne fais PAS de plt.show(), le système gère l'affichage.
 - Ajoute toujours des titres, légendes et grilles au graphique.
-- Exemple :
+- Exemple de format attendu pour le code :
 ```python
 t = np.linspace(0, 0.01, 500)
 u = 5 * np.cos(2*np.pi*100*t)
