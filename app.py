@@ -13,7 +13,7 @@ import numpy as np
 try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    st.error("Clé API manquante.")
+    st.error("Clé API manquante. Ajoutez-la dans les Secrets.")
     st.stop()
 
 FICHIER_COURS = "cours_reference.pdf"
@@ -83,7 +83,6 @@ with st.expander("📸 Envoyer une Image ou un Audio (Cliquez pour ouvrir)", exp
         if camera_shot: user_image = Image.open(camera_shot)
 
     with tab3:
-        # Note : st.audio_input est disponible sur les versions récentes de Streamlit
         audio_val = st.audio_input("Enregistrez votre question")
         if audio_val: user_audio = audio_val
 
@@ -151,9 +150,9 @@ if prompt_text or user_audio or user_image:
         placeholder = st.empty()
         with st.spinner("Analyse..."):
             try:
-                # Modèle Flash pour éviter l'erreur 404
+                # --- CORRECTION FINALE : NOM PRÉCIS DU MODÈLE ---
                 resp = client.models.generate_content(
-                    model="gemini-1.5-flash", 
+                    model="gemini-1.5-flash-002", # Nom officiel version 002 (Stable)
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_PROMPT,
                         temperature=0.3,
