@@ -1,7 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
-from gtts import gTTS
 import io
 import os
 import matplotlib.pyplot as plt
@@ -14,8 +13,8 @@ import json
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
-    from rdkit.Chem import rdDepictor # Nécessaire pour la 3D
-    from rdkit.Chem.Draw import rdMolDraw2D # Nécessaire pour les options de dessin avancées
+    from rdkit.Chem import rdDepictor
+    from rdkit.Chem.Draw import rdMolDraw2D
 except ImportError:
     pass
 
@@ -57,7 +56,7 @@ PROGRAMME = {
     }
 }
 
-# --- 3. SYSTEME DE SAUVEGARDE (JSON) ---
+# --- 3. SAUVEGARDE ---
 DB_FILE = "memoire_eleves.json"
 
 def charger_memoire():
@@ -68,15 +67,11 @@ def charger_memoire():
 
 def sauvegarder_position(user_id, niveau, partie, lecon):
     data = charger_memoire()
-    data[user_id] = {
-        "niveau": niveau,
-        "partie": partie,
-        "lecon": lecon
-    }
+    data[user_id] = {"niveau": niveau, "partie": partie, "lecon": lecon}
     with open(DB_FILE, "w") as f:
         json.dump(data, f)
 
-# --- 4. AUTHENTIFICATION ---
+# --- 4. AUTH ---
 if "auth" not in st.session_state: 
     st.session_state.auth = False
     st.session_state.user_level = None
@@ -102,12 +97,11 @@ if not st.session_state.auth:
     st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 5. NAVIGATION INTELLIGENTE ---
+# --- 5. NAVIGATION ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     user_lvl = st.session_state.user_level
     
-    # Position
     memoire = charger_memoire()
     last_pos = memoire.get(st.session_state.user_id, {})
     
@@ -135,9 +129,8 @@ with st.sidebar:
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
 
-    # PALETTE MATHÉMATIQUE
-    with st.expander("🧮 Clavier Mathématique"):
-        st.caption("Copiez un symbole et collez-le dans le chat.")
+    with st.expander("🧮 Clavier Math"):
+        st.caption("Copiez un symbole et collez-le.")
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.code("Δ", language="text")
         with c2: st.code("θ", language="text")
@@ -148,14 +141,13 @@ with st.sidebar:
         with c6: st.code("α", language="text")
         with c7: st.code("Ω", language="text")
         with c8: st.code("∞", language="text")
-        st.caption("Ou tapez simplement : 'racine', 'alpha', 'delta'...")
 
     st.divider()
     if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. CERVEAU (Prompt Anti-Zèle et Pro-Cram) ---
+# --- 6. CERVEAU (Prompt Anti-IPython) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -165,22 +157,31 @@ SYSTEM_PROMPT = f"""
 {ROLE}
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
-RÈGLES D'ACTION IMPÉRATIVES :
-1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Si l'élève ne demande pas explicitement un dessin ou une courbe, NE GÉNÈRE AUCUN CODE. Contente-toi du texte et des maths.
-
+RÈGLES D'ACTION :
+1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande = Pas de code.
 2. **SI GRAPHIQUE DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
-   - **CHIMIE ORGA (CRAM OBLIGATOIRE)** : Si la stéréochimie est importante (R/S, Cram), tu DOIS forcer `rdkit` à dessiner les coins (wedges). 
-     -> *Astuce code :* Utilise `rdDepictor.SetPreferCoordGen(True)` et assure-toi que le SMILES contient les informations stéréochimiques (`@` ou `@@`).
-   - **PHYSIQUE** : `plt.gca().set_aspect('equal')` (trajectoires), `plt.xlim/ylim` (zoom), ajuster `scale` (vecteurs).
+   - **CHIMIE ORGA** : 
+     - Utilise `rdkit` et `plt.imshow(Draw.MolToImage(mol))`.
+     - **INTERDICTION ABSOLUE** d'utiliser `IPython` ou `display()`. Utilise uniquement `matplotlib`.
+     - Pour Cram (3D) : Utilise `rdDepictor.SetPreferCoordGen(True)`.
+   - **PHYSIQUE** : `plt.gca().set_aspect('equal')`, `plt.xlim/ylim` manuel, `quiver` avec scale adapté.
 
-3. **COMPRÉHENSION** : Comprends "vec(v)", "delta", "racine de x".
-4. **CONTENU** : Maths ($\LaTeX$).
-5. **PAS D'IMAGES HALLUCINÉES**.
+3. **CONTENU** : Maths ($\LaTeX$).
+4. **PAS D'IMAGES HALLUCINÉES**.
 """
 
 # --- 7. INTERFACE ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
+
+# Zone d'entrée MULTIMODALE (Texte + Image + Audio)
+with st.container():
+    c_text, c_audio = st.columns([4, 1])
+    with c_text:
+        prompt = st.chat_input("Pose ta question...")
+    with c_audio:
+        # Nouveau bouton micro
+        audio_input = st.audio_input("🎤 Parler")
 
 with st.expander("📸 Envoyer une image", expanded=False):
     tab_cam, tab_upl = st.tabs(["Caméra", "Fichier"])
@@ -208,7 +209,6 @@ for msg in st.session_state.messages:
         if "code_blocks" in msg and msg["code_blocks"]:
             for code in msg["code_blocks"]:
                 try:
-                    # ON AJOUTE LES IMPORTS RDKIT AVANCÉS
                     exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                     try: 
                         from rdkit import Chem
@@ -224,16 +224,17 @@ for msg in st.session_state.messages:
                     st.pyplot(plt.gcf())
                     plt.clf() 
                     plt.close()
-                except Exception as e:
-                    st.caption(f"⚠️ Erreur d'affichage : {e}")
+                except: pass
 
-# Saisie
-prompt = st.chat_input("Pose ta question...")
-
-if prompt or img_file:
+# TRAITEMENT DE LA DEMANDE
+if prompt or img_file or audio_input:
     user_content = []
-    display_txt = prompt if prompt else "Analyse..."
+    display_txt = "Analyse..."
+    
+    # 1. Gestion du texte
     if prompt:
+        display_txt = prompt
+        # Mémoire
         history_context = "CONTEXTE (Rappel) :\n"
         recent_msgs = st.session_state.messages[-40:] 
         for msg in recent_msgs:
@@ -243,20 +244,30 @@ if prompt or img_file:
         final_prompt_text = f"{history_context}\n\nQUESTION ACTUELLE : {prompt}"
         user_content.append(final_prompt_text)
     
+    # 2. Gestion de l'Audio (Nouveau !)
+    if audio_input:
+        display_txt = "🎤 *Message vocal envoyé*"
+        # Gemini 2.0 Flash accepte l'audio directement
+        user_content.append({"mime_type": "audio/wav", "data": audio_input.getvalue()})
+        user_content.append("Réponds à ce message vocal de l'élève en contexte.")
+
+    # 3. Gestion de l'Image
     img_data = None
     if img_file:
         img_data = Image.open(img_file)
         user_content.append(img_data)
-        if not prompt: user_content.append("Analyse ceci.")
+        if not prompt and not audio_input: user_content.append("Analyse ceci.")
 
+    # Affichage immédiat
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
     with st.chat_message("user"):
         st.markdown(display_txt)
         if img_data: st.image(img_data, width=300)
+        if audio_input: st.audio(audio_input)
 
     # Réponse IA
     with st.chat_message("assistant"):
-        with st.spinner("..."):
+        with st.spinner("Réflexion..."):
             try:
                 model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
                 response = model.generate_content(user_content)
@@ -271,7 +282,6 @@ if prompt or img_file:
                 valid_codes = []
                 for code in code_blocks:
                     try:
-                        # ON AJOUTE LES IMPORTS RDKIT AVANCÉS ICI AUSSI
                         exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                         try: 
                             from rdkit import Chem
@@ -296,14 +306,7 @@ if prompt or img_file:
                     "display_text": text_to_show, 
                     "code_blocks": valid_codes
                 })
-                
-                try:
-                    clean_text = text_to_show.replace("*","").replace("$", "")
-                    tts = gTTS(clean_text, lang='fr')
-                    bio = io.BytesIO()
-                    tts.write_to_fp(bio)
-                    st.audio(bio, format='audio/mp3')
-                except: pass
+                # PLUS DE TTS ICI (Supprimé comme demandé)
 
             except Exception as e:
                 st.error(f"Erreur : {e}")
