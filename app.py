@@ -129,9 +129,9 @@ with st.sidebar:
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
 
-    # --- MICROPHONE DÉPLACÉ ICI (Pour libérer l'écran) ---
+    # --- MICROPHONE ---
     st.markdown("### 🎤 Vocal")
-    audio_input = st.audio_input("Poser une question")
+    audio_val = st.audio_input("Poser une question")
 
     with st.expander("🧮 Clavier Math"):
         st.caption("Copiez un symbole et collez-le.")
@@ -151,7 +151,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. CERVEAU (Avec Gardien Anti-Recette) ---
+# --- 6. CERVEAU ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -163,15 +163,15 @@ CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
 RÈGLES D'ACTION :
 1. **HORS SUJET (SÉCURITÉ)** : 
-   - Si la question ne concerne PAS la Physique, la Chimie ou les Maths (ex: cuisine, sport, météo, blagues), REFUSE FERMEMENT.
+   - Si la question ne concerne PAS la Physique, la Chimie ou les Maths, REFUSE FERMEMENT.
    - Réponds : "Je suis un assistant spécialisé en Physique-Chimie. Je ne peux pas répondre à cette question."
 
-2. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande explicite ("trace", "dessine") = Pas de code.
+2. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande explicite = Pas de code.
 
 3. **SI GRAPHIQUE DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
-   - **CHIMIE ORGA** : `rdkit` + `plt.imshow` (PAS de IPython). Force le 3D (Cram) si nécessaire.
-   - **PHYSIQUE** : `plt.gca().set_aspect('equal')`, `plt.xlim/ylim` manuel, `quiver` scale adapté.
+   - **CHIMIE ORGA** : `rdkit` + `plt.imshow`. **PAS de IPython**.
+   - **PHYSIQUE** : `plt.gca().set_aspect('equal')`, `plt.xlim/ylim` manuel.
 
 4. **CONTENU** : Maths ($\LaTeX$).
 5. **PAS D'IMAGES HALLUCINÉES**.
@@ -197,7 +197,7 @@ if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
 
-# Historique (S'affiche AVANT la zone de saisie pour pousser le contenu)
+# Affichage Historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
@@ -223,17 +223,37 @@ for msg in st.session_state.messages:
                     plt.close()
                 except: pass
 
-# --- ZONE DE SAISIE PRINCIPALE (REMISE EN BAS) ---
-# Le chat_input se place naturellement en bas de l'écran (fixed bottom)
+# --- ZONE DE SAISIE PRINCIPALE ---
+# Par défaut, chat_input se met toujours en bas.
 prompt = st.chat_input("Pose ta question ici...")
 
-# TRAITEMENT
-if prompt or img_file or audio_input:
+# --- LOGIQUE DE TRAITEMENT UNIFIÉE (Stable) ---
+# On détecte si on doit traiter une entrée (Texte, Audio ou Image)
+input_a_traiter = False
+type_input = None
+
+# Gestion de l'audio pour éviter les boucles (On ne traite que s'il est nouveau)
+if audio_val and ("last_audio" not in st.session_state or st.session_state.last_audio != audio_val):
+    input_a_traiter = True
+    type_input = "audio"
+    st.session_state.last_audio = audio_val # On mémorise pour ne pas le retraiter en boucle
+
+if prompt:
+    input_a_traiter = True
+    type_input = "text"
+
+if img_file and not input_a_traiter: # Si image seule sans texte
+    # On vérifie si c'est une nouvelle image (simple check)
+    input_a_traiter = True
+    type_input = "image_only"
+
+
+if input_a_traiter:
     user_content = []
     display_txt = "Analyse..."
     
-    # 1. Gestion du texte
-    if prompt:
+    # 1. Construction du message
+    if type_input == "text":
         display_txt = prompt
         history_context = "CONTEXTE (Rappel) :\n"
         recent_msgs = st.session_state.messages[-40:] 
@@ -244,79 +264,33 @@ if prompt or img_file or audio_input:
         final_prompt_text = f"{history_context}\n\nQUESTION ACTUELLE : {prompt}"
         user_content.append(final_prompt_text)
     
-    # 2. Gestion de l'Audio (Depuis la Sidebar)
-    if audio_input:
+    elif type_input == "audio":
         display_txt = "🎤 *Question vocale reçue*"
-        user_content.append({"mime_type": "audio/wav", "data": audio_input.getvalue()})
-        user_content.append("Réponds à ce message vocal.")
+        user_content.append({"mime_type": "audio/wav", "data": audio_val.getvalue()})
+        user_content.append("Réponds à ce message vocal de l'élève. Utilise le contexte précédent si nécessaire.")
 
-    # 3. Gestion de l'Image
+    elif type_input == "image_only":
+        user_content.append("Analyse cette image.")
+    
+    # Ajout de l'image si présente (même avec texte/audio)
     img_data = None
     if img_file:
         img_data = Image.open(img_file)
         user_content.append(img_data)
-        if not prompt and not audio_input: user_content.append("Analyse ceci.")
 
-    # Affichage immédiat
+    # 2. Affichage immédiat (User)
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
-    
-    # Petit hack pour recharger la page et afficher le message utilisateur tout de suite
-    st.rerun() 
+    with st.chat_message("user"):
+        st.markdown(display_txt)
+        if img_data: st.image(img_data, width=300)
+        if type_input == "audio": st.audio(audio_val)
 
-# --- RÉPONSE IA ---
-# Si le dernier message vient de l'utilisateur, c'est que l'IA doit répondre
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    last_msg = st.session_state.messages[-1]
-    
-    # On reconstruit le contenu pour l'IA (car le rerun a vidé user_content)
-    # (C'est nécessaire avec st.chat_input pour une fluidité parfaite)
-    # Pour simplifier ici sans double exécution, on suppose que l'IA répond dans la foulée
-    
-    with st.chat_message("assistant"):
-        with st.spinner("Réflexion..."):
-            try:
-                # On recrée le contexte rapide si besoin (car variable perdue au rerun)
-                # Note: Dans une app complexe, on stockerait ça en session_state, 
-                # mais ici on relance la génération directe sur le dernier msg.
-                
-                content_for_ai = []
-                
-                # Récup image
-                if last_msg.get("image_data"):
-                    content_for_ai.append(last_msg["image_data"])
-                    content_for_ai.append("Analyse cette image.")
-                
-                # Récup texte (contexte + question)
-                # On refait le contexte historique rapide
-                hist = "HISTORIQUE:\n"
-                for m in st.session_state.messages[:-1][-40:]:
-                    hist += f"- {m['role']} : {m['display_text']}\n"
-                
-                full_query = f"{hist}\n\nACTUEL: {last_msg['display_text']}"
-                
-                # Si c'était de l'audio, on ne peut pas le rejouer facilement sans le stocker,
-                # MAIS pour ce script simplifié, on va compter sur le fait que l'audio a été traité AVANT le rerun
-                # CORRECTION : Le rerun vide l'audio input. 
-                # Pour éviter la complexité : on retire le st.rerun() du bloc précédent 
-                # et on laisse l'affichage se faire naturellement.
-                pass 
-                
-            except: pass
-
-# --- CORRECTION FINALE LOGIQUE D'AFFICHAGE ---
-# Pour que tout marche sans 'rerun' complexe : 
-# J'ai retiré le 'st.rerun()' ci-dessus dans la logique mentale et je remets le bloc standard.
-# Voici le bloc standard de réponse qui fonctionne :
-
+    # 3. Génération Réponse (IA)
     with st.chat_message("assistant"):
         with st.spinner("Réflexion..."):
             try:
                 model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
-                
-                # Reconstitution propre du contenu pour l'IA
-                final_content = user_content # Celui généré plus haut avant le display
-                
-                response = model.generate_content(final_content)
+                response = model.generate_content(user_content)
                 text = response.text
                 
                 code_blocks = re.findall(r'```python(.*?)```', text, re.DOTALL)
@@ -354,5 +328,4 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 })
 
             except Exception as e:
-                # Si user_content est vide (cas du refresh), on ne fait rien
-                pass
+                st.error(f"Erreur : {e}")
