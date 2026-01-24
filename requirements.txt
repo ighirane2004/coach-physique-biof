@@ -1,6 +1,6 @@
 streamlit
-google-genai
+google-generativeai
 Pillow
-gtts
+gTTS
 matplotlib
 numpy
