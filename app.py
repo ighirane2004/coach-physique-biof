@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import re
+import json # <--- NOUVEL IMPORT IMPORTANT
 
 # --- IMPORTS CHIMIE ---
 try:
@@ -54,7 +55,26 @@ PROGRAMME = {
     }
 }
 
-# --- 3. AUTHENTIFICATION ---
+# --- 3. SYSTEME DE SAUVEGARDE (JSON) ---
+DB_FILE = "memoire_eleves.json"
+
+def charger_memoire():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def sauvegarder_position(user_id, niveau, partie, lecon):
+    data = charger_memoire()
+    data[user_id] = {
+        "niveau": niveau,
+        "partie": partie,
+        "lecon": lecon
+    }
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f)
+
+# --- 4. AUTHENTIFICATION ---
 if "auth" not in st.session_state: 
     st.session_state.auth = False
     st.session_state.user_level = None
@@ -80,20 +100,40 @@ if not st.session_state.auth:
     st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 4. NAVIGATION ---
+# --- 5. NAVIGATION INTELLIGENTE ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     user_lvl = st.session_state.user_level
     
+    # 1. Chargement de la dernière position connue
+    memoire = charger_memoire()
+    last_pos = memoire.get(st.session_state.user_id, {})
+    
     if user_lvl == "admin": options_niveau = list(PROGRAMME.keys())
     elif user_lvl in PROGRAMME: options_niveau = [user_lvl]
     else: st.stop()
-            
-    niveau = st.selectbox("1. Niveau", options_niveau)
+    
+    # Calcul des index par défaut pour retrouver la position
+    def get_index(liste, valeur):
+        try: return liste.index(valeur)
+        except: return 0
+
+    # Menu Niveau
+    idx_niv = get_index(options_niveau, last_pos.get("niveau"))
+    niveau = st.selectbox("1. Niveau", options_niveau, index=idx_niv)
+    
+    # Menu Partie
     parties_dispo = list(PROGRAMME[niveau].keys()) if niveau in PROGRAMME else []
-    partie = st.selectbox("2. Chapitre", parties_dispo)
+    idx_part = get_index(parties_dispo, last_pos.get("partie"))
+    partie = st.selectbox("2. Chapitre", parties_dispo, index=idx_part)
+    
+    # Menu Leçon
     lecons_dispo = PROGRAMME[niveau][partie] if partie in PROGRAMME[niveau] else []
-    lecon = st.selectbox("3. Leçon", lecons_dispo)
+    idx_lec = get_index(lecons_dispo, last_pos.get("lecon"))
+    lecon = st.selectbox("3. Leçon", lecons_dispo, index=idx_lec)
+    
+    # SAUVEGARDE AUTOMATIQUE DE LA POSITION ACTUELLE
+    sauvegarder_position(st.session_state.user_id, niveau, partie, lecon)
     
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
@@ -102,7 +142,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU (Prompt Final Validé) ---
+# --- 6. CERVEAU (Prompt Validé) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -113,21 +153,17 @@ SYSTEM_PROMPT = f"""
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
 RÈGLES D'ACTION CRUCIALES :
-1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : 
-   - NE GÉNÈRE JAMAIS de code Python si l'utilisateur ne l'a pas demandé explicitement (ex: "trace", "dessine").
-   - Si pas de demande graphique, réponds uniquement avec du TEXTE et des formules.
-
-2. **SI UN GRAPHIQUE EST DEMANDÉ** :
+1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande = Pas de code Python.
+2. **SI GRAPHIQUE DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
-   - **PROPORTIONS** : `plt.gca().set_aspect('equal', adjustable='datalim')` pour les trajectoires.
-   - **ZOOM** : Calcule `plt.xlim` et `plt.ylim` pour centrer le graphique sur les données.
-   - **VECTEURS** : Adapte le paramètre `scale` dans `quiver` pour que les flèches soient bien visibles.
-
+   - **PROPORTIONS** : `plt.gca().set_aspect('equal', adjustable='datalim')` (trajectoires).
+   - **ZOOM** : Calcule `plt.xlim` et `plt.ylim`.
+   - **VECTEURS** : Adapte le paramètre `scale`.
 3. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
-4. **PAS D'IMAGES HALLUCINÉES** : Pas de liens `![...]`.
+4. **PAS D'IMAGES HALLUCINÉES**.
 """
 
-# --- 6. INTERFACE ---
+# --- 7. INTERFACE ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
 
 with st.expander("📸 Envoyer une image", expanded=False):
@@ -143,6 +179,8 @@ with st.expander("📸 Envoyer une image", expanded=False):
 # Initialisation
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
+
+# Reset historique si changement de leçon
 if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
@@ -179,7 +217,7 @@ if prompt or img_file:
     display_txt = prompt if prompt else "Analyse..."
     if prompt:
         history_context = "CONTEXTE (Rappel) :\n"
-        # --- MODIFICATION CRUCIALE ICI : 40 messages au lieu de 6 ---
+        # 40 messages de mémoire
         recent_msgs = st.session_state.messages[-40:] 
         for msg in recent_msgs:
             role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
