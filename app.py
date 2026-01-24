@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import re
 
-# --- IMPORTS CHIMIE (Si disponibles) ---
+# --- IMPORTS CHIMIE ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
@@ -101,7 +101,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU (Modifié pour forcer le code caché) ---
+# --- 5. CERVEAU ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -112,23 +112,17 @@ SYSTEM_PROMPT = f"""
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
 RÈGLES D'ACTION CRUCIALES :
-1. **LE CODE EST OBLIGATOIRE MAIS INVISIBLE** : 
-   - Si l'élève demande un graphique ou une molécule, tu DOIS générer le code Python correspondant.
-   - Même si l'élève dit "Donne-moi le graphe SANS le code", il veut dire "Ne m'affiche pas le TEXTE du code".
-   - Tu DOIS donc générer le bloc ```python ... ``` pour que l'application puisse tracer la courbe. SANS CE BLOC, RIEN NE S'AFFICHERA.
+1. **CODE PYTHON OBLIGATOIRE MAIS CACHÉ** : 
+   - Si on demande un schéma ou des courbes, génère TOUJOURS le code Python entre ```python ... ```.
+   - Si tu dois tracer plusieurs régimes (ex: RLC), essaie de mettre tout dans UN SEUL bloc de code en utilisant `plt.show()` une seule fois à la fin, ou `plt.subplot`.
+   - Si tu fais plusieurs blocs, ce n'est pas grave, je les traiterai tous.
 
-2. **PAS DE LIENS D'IMAGES** : 
-   - NE GÉNÈRE JAMAIS de liens Markdown comme `![Image](...)`. Cela crée des erreurs.
-   - Utilise UNIQUEMENT le code Python (Matplotlib/Rdkit).
+2. **PAS D'IMAGES HALLUCINÉES** : 
+   - Ne mets JAMAIS de liens `![Alt](...)`.
 
-3. **CHIMIE ORGANIQUE** :
-   - Utilise `rdkit` pour dessiner.
-
-4. **MATHS** :
-   - Formules en LaTeX entre $.
-
-5. **SILENCE** :
-   - Génère le code Python, mais ne dis pas "Voici le code". Dis juste "Voici la représentation :".
+3. **CONTENU** :
+   - Chimie Orga : utilise `rdkit`.
+   - Maths : LaTeX ($...$).
 """
 
 # --- 6. INTERFACE ---
@@ -151,26 +145,33 @@ if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
 
-# Affichage Historique
+# --- AFFICHAGE HISTORIQUE ROBUSTE ---
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
         if "image_data" in msg and msg["image_data"]: 
             st.image(msg["image_data"], width=300)
-        if "figure_code" in msg and msg["figure_code"]:
-            try:
-                exec_globals = {"plt": plt, "np": np, "st": st}
-                try: 
-                    from rdkit import Chem
-                    from rdkit.Chem import Draw
-                    exec_globals["Chem"] = Chem
-                    exec_globals["Draw"] = Draw
+        
+        # On vérifie s'il y a une liste de codes à exécuter
+        if "code_blocks" in msg and msg["code_blocks"]:
+            for code in msg["code_blocks"]:
+                try:
+                    exec_globals = {"plt": plt, "np": np, "st": st}
+                    try: 
+                        from rdkit import Chem
+                        from rdkit.Chem import Draw
+                        exec_globals["Chem"] = Chem
+                        exec_globals["Draw"] = Draw
+                    except: pass
+                    
+                    # On exécute le code
+                    exec(code, exec_globals)
+                    # On affiche la figure générée
+                    st.pyplot(plt.gcf())
+                    # On nettoie pour le prochain graphique
+                    plt.clf() 
+                    plt.close()
                 except: pass
-                
-                exec(msg["figure_code"], exec_globals)
-                st.pyplot(plt.gcf())
-                plt.close()
-            except: pass
 
 # Saisie
 prompt = st.chat_input("Pose ta question...")
@@ -178,9 +179,9 @@ prompt = st.chat_input("Pose ta question...")
 if prompt or img_file:
     user_content = []
     
-    # Mémoire
     display_txt = prompt if prompt else "Analyse..."
     if prompt:
+        # Mémoire des 6 derniers messages
         history_context = "CONTEXTE (Rappel) :\n"
         recent_msgs = st.session_state.messages[-6:] 
         for msg in recent_msgs:
@@ -197,7 +198,6 @@ if prompt or img_file:
         user_content.append(img_data)
         if not prompt: user_content.append("Analyse ceci.")
 
-    # Affichage immédiat
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
     with st.chat_message("user"):
         st.markdown(display_txt)
@@ -211,25 +211,22 @@ if prompt or img_file:
                 response = model.generate_content(user_content)
                 text = response.text
                 
-                # --- EXTRACTION ET NETTOYAGE ---
-                code = None
+                # --- NOUVELLE LOGIQUE DE NETTOYAGE (MULTI-BLOCS) ---
                 
-                # 1. On cherche le code Python
-                if "```python" in text:
-                    match = re.search(r'```python(.*?)```', text, re.DOTALL)
-                    if match:
-                        code = match.group(1)
-                        # On retire le code du texte visible
-                        text = text.replace(match.group(0), "")
+                # 1. On capture TOUS les blocs de code (pas juste le premier)
+                code_blocks = re.findall(r'```python(.*?)```', text, re.DOTALL)
                 
-                # 2. On supprime les liens d'images Markdown brisés (le bug que vous aviez)
-                # Cette ligne retire tout ce qui ressemble à ![Alt](path)
-                text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+                # 2. On supprime TOUS les blocs de code du texte visible
+                text_to_show = re.sub(r'```python.*?```', '', text, flags=re.DOTALL)
                 
-                st.markdown(text)
+                # 3. On supprime les liens d'images brisés
+                text_to_show = re.sub(r'!\[.*?\]\(.*?\)', '', text_to_show)
                 
-                # Exécution graphique
-                if code:
+                st.markdown(text_to_show)
+                
+                # 4. On exécute CHAQUE bloc de code trouvé
+                valid_codes = []
+                for code in code_blocks:
                     try:
                         exec_globals = {"plt": plt, "np": np, "st": st}
                         try: 
@@ -241,14 +238,21 @@ if prompt or img_file:
                         
                         exec(code, exec_globals)
                         st.pyplot(plt.gcf())
+                        plt.clf() # Important : on vide la figure entre deux graphiques
                         plt.close()
+                        valid_codes.append(code)
                     except Exception as e:
-                        st.warning(f"Erreur graphique : {e}")
+                        # On n'affiche pas l'erreur à l'élève, on continue
+                        pass
 
-                st.session_state.messages.append({"role": "assistant", "display_text": text, "figure_code": code})
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "display_text": text_to_show, 
+                    "code_blocks": valid_codes # On stocke la liste des codes
+                })
                 
                 try:
-                    clean_text = text.replace("*","").replace("$", "")
+                    clean_text = text_to_show.replace("*","").replace("$", "")
                     tts = gTTS(clean_text, lang='fr')
                     bio = io.BytesIO()
                     tts.write_to_fp(bio)
