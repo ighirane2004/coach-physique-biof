@@ -239,7 +239,9 @@ if prompt:
     with st.chat_message("assistant"):
         with st.spinner("..."):
             try:
-                model = genai.GenerativeModel("models/gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+                # CORRECTION ICI : On utilise "gemini-1.5-flash" tout court
+                model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+                
                 response = model.generate_content(prompt)
                 text = response.text
                 
