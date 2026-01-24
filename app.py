@@ -6,6 +6,7 @@ import io
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import math  # Ajout important pour les calculs de trajectoire
 import re
 
 # --- IMPORTS CHIMIE ---
@@ -101,7 +102,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU (Prompt amélioré pour les graphismes) ---
+# --- 5. CERVEAU ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -112,18 +113,16 @@ SYSTEM_PROMPT = f"""
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
 RÈGLES D'ACTION CRUCIALES :
-1. **CODE PYTHON OBLIGATOIRE ET OPTIMISÉ** : 
-   - Si on demande un schéma ou des courbes, génère le code Python entre ```python ... ```.
-   - **VECTEURS (Important)** : Quand tu utilises `plt.quiver` pour des forces ou vitesses, N'UTILISE PAS l'échelle par défaut. Force une échelle visible.
-     -> Exemple : `plt.quiver(X, Y, U, V, angles='xy', scale_units='xy', scale=1, color='r')`. (Ajuste 'scale' : plus il est petit, plus la flèche est grande).
-   - **PROPORTIONS** : Pour la mécanique et l'optique, utilise TOUJOURS `plt.gca().set_aspect('equal', adjustable='box')` pour que le graphique ne soit pas déformé.
-   - **ZOOM** : Calcule toujours les limites (xlim, ylim) pour zoomer sur la partie intéressante du graphe, avec une petite marge. Ne laisse pas de grands espaces vides.
+1. **CODE PYTHON** : 
+   - Génère TOUJOURS le code Python entre ```python ... ``` pour les graphiques.
+   - **VECTEURS** : Fais très attention aux dimensions des tableaux X, Y, U, V. Ils doivent avoir la même taille. Utilise `plt.quiver` avec `angles='xy', scale_units='xy', scale=1`.
+   - **Esthétique** : Utilise `plt.axis('equal')` pour la mécanique (trajectoires).
 
 2. **PAS D'IMAGES HALLUCINÉES** : Ne mets JAMAIS de liens `![Alt](...)`.
 
 3. **CONTENU** : Chimie Orga avec `rdkit`, Maths en LaTeX ($...$).
 
-4. **SILENCE** : Ne dis pas "Voici le code". Affiche juste le résultat.
+4. **SILENCE** : Affiche juste le résultat, pas le code.
 """
 
 # --- 6. INTERFACE ---
@@ -156,7 +155,8 @@ for msg in st.session_state.messages:
         if "code_blocks" in msg and msg["code_blocks"]:
             for code in msg["code_blocks"]:
                 try:
-                    exec_globals = {"plt": plt, "np": np, "st": st}
+                    # On injecte 'math' ici aussi
+                    exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                     try: 
                         from rdkit import Chem
                         from rdkit.Chem import Draw
@@ -167,7 +167,9 @@ for msg in st.session_state.messages:
                     st.pyplot(plt.gcf())
                     plt.clf() 
                     plt.close()
-                except: pass
+                except Exception as e:
+                    # Dans l'historique, on affiche l'erreur en petit
+                    st.caption(f"⚠️ Erreur d'affichage : {e}")
 
 # Saisie
 prompt = st.chat_input("Pose ta question...")
@@ -213,20 +215,24 @@ if prompt or img_file:
                 valid_codes = []
                 for code in code_blocks:
                     try:
-                        exec_globals = {"plt": plt, "np": np, "st": st}
+                        # ON AJOUTE 'math' aux outils disponibles
+                        exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                         try: 
                             from rdkit import Chem
                             from rdkit.Chem import Draw
                             exec_globals["Chem"] = Chem
                             exec_globals["Draw"] = Draw
                         except: pass
+                        
                         exec(code, exec_globals)
                         st.pyplot(plt.gcf())
                         plt.clf()
                         plt.close()
                         valid_codes.append(code)
                     except Exception as e:
-                        pass
+                        # --- C'EST ICI QUE L'ERREUR S'AFFICHERA ---
+                        st.error(f"Oups, une erreur dans le tracé : {e}")
+                        # On ne crash pas, mais on prévient l'utilisateur
 
                 st.session_state.messages.append({
                     "role": "assistant", 
