@@ -31,27 +31,24 @@ def get_images():
 
 def executer_code_python(code):
     try:
-        # On exécute le code dans un environnement sécurisé
         local_vars = {}
         exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
-        
-        # On récupère la figure pour l'afficher proprement
         fig = plt.gcf()
         st.pyplot(fig)
-        plt.clf() # Nettoyage après affichage
+        plt.clf()
     except Exception as e:
         st.error(f"Erreur graphe : {e}")
 
-# --- 3. PROMPT PÉDAGOGIQUE ---
+# --- 3. PROMPT PÉDAGOGIQUE (C'est ici que j'ai corrigé) ---
 txt_images = ", ".join(get_images())
 
-# Consignes strictes pour le robot
 SYSTEM_PROMPT = "Tu es un professeur de Physique-Chimie expert. "
+SYSTEM_PROMPT += "CONTEXTE : L'élève ne voit PAS tes documents internes (PDF ou Images). "
+SYSTEM_PROMPT += "INTERDICTION : Ne dis jamais 'comme le montre le document' ou 'sur la figure ci-contre' sauf si tu affiches toi-même l'image dans ce message. "
 SYSTEM_PROMPT += "Règle 1 : Ne montre JAMAIS le code Python à l'élève. "
 SYSTEM_PROMPT += "Règle 2 : Si l'élève veut un graphe, génère le code entre ```python ... ```. "
-SYSTEM_PROMPT += "Règle 3 : Pour la MODULATION D'AMPLITUDE, trace toujours l'enveloppe (le signal modulant + composante continue) en rouge pointillé ('r--') par dessus le signal modulé bleu. "
-SYSTEM_PROMPT += "Règle 4 : Ajoute toujours : plt.grid(True), plt.xlabel('Temps (s)'), plt.legend(). "
-SYSTEM_PROMPT += f"Images disponibles (si besoin) : {txt_images} (utilise [[AFFICHER:nom]]). "
+SYSTEM_PROMPT += "Règle 3 : Pour la MODULATION D'AMPLITUDE, trace toujours l'enveloppe en rouge pointillé ('r--') par dessus le signal modulé. "
+SYSTEM_PROMPT += f"Images en stock (à utiliser avec [[AFFICHER:nom]] seulement si pertinent) : {txt_images}. "
 
 # --- 4. INTERFACE ---
 if "auth" not in st.session_state: st.session_state.auth = False
@@ -69,32 +66,19 @@ client = genai.Client(api_key=API_KEY)
 
 if "messages" not in st.session_state: st.session_state.messages = []
 
-# Affichage de l'historique
+# Affichage historique (nettoyé)
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        # On n'affiche que le texte nettoyé (sans le code caché)
         st.markdown(msg["display_text"])
-        
-        # Si le message contenait un graphe, on le ré-affiche
-        if "figure_code" in msg:
-            executer_code_python(msg["figure_code"])
-            
-        # Si le message contenait une image
-        if "img_path" in msg and msg["img_path"]:
-            st.image(msg["img_path"])
+        if "figure_code" in msg: executer_code_python(msg["figure_code"])
+        if "img_path" in msg: st.image(msg["img_path"])
 
-# Zone de saisie
 if prompt := st.chat_input("Pose ta question..."):
-    # 1. Message Utilisateur
-    st.session_state.messages.append({
-        "role": "user", 
-        "display_text": prompt, 
-        "content": prompt
-    })
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    # User message
+    st.session_state.messages.append({"role": "user", "display_text": prompt, "content": prompt})
+    with st.chat_message("user"): st.markdown(prompt)
 
-    # 2. Préparation Context (PDF + Historique)
+    # Context
     api_content = []
     if load_knowledge_base():
         try:
@@ -105,7 +89,7 @@ if prompt := st.chat_input("Pose ta question..."):
     for m in st.session_state.messages:
         api_content.append(types.Content(role="model" if m["role"]=="assistant" else "user", parts=[types.Part.from_text(text=m["content"])]))
     
-    # 3. Réponse Assistant
+    # Réponse
     with st.chat_message("assistant"):
         placeholder = st.empty()
         with st.spinner("Réflexion..."):
@@ -116,38 +100,29 @@ if prompt := st.chat_input("Pose ta question..."):
                     contents=api_content
                 )
                 raw_text = resp.text
-                text_to_display = raw_text # Par défaut, on affiche tout
+                text_to_display = raw_text
                 code_found = None
                 image_found = None
 
-                # A. DÉTECTION ET NETTOYAGE DU CODE PYTHON (Le correctif est ici)
+                # Nettoyage Code Python
                 if "```python" in raw_text:
                     parts = raw_text.split("```python")
-                    text_before = parts[0] # Texte avant le code
-                    code_part = parts[1].split("```")[0] # Le code lui-même
-                    text_after = parts[1].split("```")[1] if len(parts[1].split("```")) > 1 else ""
-                    
+                    code_part = parts[1].split("```")[0]
+                    text_to_display = parts[0] + (parts[1].split("```")[1] if len(parts[1].split("```")) > 1 else "")
                     code_found = code_part
-                    text_to_display = text_before + text_after # On cache le code !
 
-                # B. DÉTECTION IMAGES
+                # Nettoyage Images
                 if "[[AFFICHER:" in text_to_display:
                     match = re.search(r"\[\[AFFICHER:(.*?)\]\]", text_to_display)
                     if match:
                         nom = match.group(1)
                         path = os.path.join(DOSSIER_SCHEMAS, nom)
-                        if os.path.exists(path):
-                            image_found = path
+                        if os.path.exists(path): image_found = path
                         text_to_display = text_to_display.replace(match.group(0), "")
 
-                # C. AFFICHAGE FINAL
                 placeholder.markdown(text_to_display)
-                
-                if image_found:
-                    st.image(image_found)
-                
-                if code_found:
-                    executer_code_python(code_found) # On exécute le code caché
+                if image_found: st.image(image_found)
+                if code_found: executer_code_python(code_found)
 
                 # Audio
                 try:
@@ -157,16 +132,11 @@ if prompt := st.chat_input("Pose ta question..."):
                     st.audio(audio, format='audio/mp3')
                 except: pass
 
-                # Sauvegarde en mémoire
-                msg_data = {
-                    "role": "assistant", 
-                    "content": raw_text,        # On garde tout pour la mémoire de l'IA
-                    "display_text": text_to_display # On garde le propre pour l'affichage
-                }
-                if code_found: msg_data["figure_code"] = code_found
-                if image_found: msg_data["img_path"] = image_found
-                
-                st.session_state.messages.append(msg_data)
+                # Sauvegarde
+                msg = {"role": "assistant", "content": raw_text, "display_text": text_to_display}
+                if code_found: msg["figure_code"] = code_found
+                if image_found: msg["img_path"] = image_found
+                st.session_state.messages.append(msg)
 
             except Exception as e:
                 st.error(f"Erreur : {e}")
