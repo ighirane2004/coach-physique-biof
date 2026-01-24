@@ -32,23 +32,31 @@ def get_images():
 def executer_code_python(code):
     try:
         local_vars = {}
+        # On définit une taille de figure standard pour éviter les déformations
+        plt.figure(figsize=(10, 6))
         exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
         fig = plt.gcf()
         st.pyplot(fig)
-        plt.clf()
+        plt.close(fig) # Important : fermer la figure pour libérer la mémoire
     except Exception as e:
         st.error(f"Erreur graphe : {e}")
 
-# --- 3. PROMPT PÉDAGOGIQUE (C'est ici que j'ai corrigé) ---
+# --- 3. PROMPT PÉDAGOGIQUE (renforcé) ---
 txt_images = ", ".join(get_images())
 
-SYSTEM_PROMPT = "Tu es un professeur de Physique-Chimie expert. "
-SYSTEM_PROMPT += "CONTEXTE : L'élève ne voit PAS tes documents internes (PDF ou Images). "
-SYSTEM_PROMPT += "INTERDICTION : Ne dis jamais 'comme le montre le document' ou 'sur la figure ci-contre' sauf si tu affiches toi-même l'image dans ce message. "
-SYSTEM_PROMPT += "Règle 1 : Ne montre JAMAIS le code Python à l'élève. "
-SYSTEM_PROMPT += "Règle 2 : Si l'élève veut un graphe, génère le code entre ```python ... ```. "
-SYSTEM_PROMPT += "Règle 3 : Pour la MODULATION D'AMPLITUDE, trace toujours l'enveloppe en rouge pointillé ('r--') par dessus le signal modulé. "
-SYSTEM_PROMPT += f"Images en stock (à utiliser avec [[AFFICHER:nom]] seulement si pertinent) : {txt_images}. "
+SYSTEM_PROMPT = """
+Tu es un professeur de Physique-Chimie expert et rigoureux (Niveau Bac).
+
+RÈGLES ABSOLUES (A respecter sous peine de pénalité) :
+1. INVISIBLE : L'élève ne voit PAS tes documents internes. Ne dis JAMAIS "comme le montre le document" ou "voir figure ci-contre" sauf si tu affiches l'image toi-même.
+2. CODE CACHÉ : Ne montre JAMAIS le code Python. L'élève ne doit voir que le graphique final.
+3. PEDAGOGIE : Ne donne pas la réponse directement. Guide l'élève pas à pas.
+4. COURBES : Si l'élève demande un tracé, génère le code Python entre ```python ... ```.
+   - Pour la MODULATION D'AMPLITUDE : Trace toujours l'enveloppe (signal modulant + composante continue) en rouge pointillé 'r--' par dessus le signal modulé bleu.
+   - Ajoute toujours une grille, un titre et les légendes des axes.
+
+Images disponibles (utilise [[AFFICHER:nom_image]] pour les montrer) : {images}
+""".format(images=txt_images)
 
 # --- 4. INTERFACE ---
 if "auth" not in st.session_state: st.session_state.auth = False
@@ -59,14 +67,14 @@ if not st.session_state.auth:
     st.stop()
 
 st.title("⚛️ Coach Physique BIOF")
-st.caption("Assistant IA pour la Physique-Chimie")
+st.caption("Assistant IA - Version Pro")
 
 # --- 5. MOTEUR DE CHAT ---
 client = genai.Client(api_key=API_KEY)
 
 if "messages" not in st.session_state: st.session_state.messages = []
 
-# Affichage historique (nettoyé)
+# Affichage historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
@@ -92,11 +100,15 @@ if prompt := st.chat_input("Pose ta question..."):
     # Réponse
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        with st.spinner("Réflexion..."):
+        with st.spinner("Analyse approfondie..."):
             try:
+                # CHANGEMENT MAJEUR ICI : Modèle 1.5 Pro + Température basse
                 resp = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+                    model="gemini-1.5-pro", # Le cerveau le plus intelligent
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        temperature=0.3, # Rigueur maximale (moins de fantaisie)
+                    ),
                     contents=api_content
                 )
                 raw_text = resp.text
@@ -108,6 +120,7 @@ if prompt := st.chat_input("Pose ta question..."):
                 if "```python" in raw_text:
                     parts = raw_text.split("```python")
                     code_part = parts[1].split("```")[0]
+                    # On reconstruit le texte sans le code
                     text_to_display = parts[0] + (parts[1].split("```")[1] if len(parts[1].split("```")) > 1 else "")
                     code_found = code_part
 
