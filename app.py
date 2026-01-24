@@ -52,14 +52,11 @@ if "auth" not in st.session_state:
     st.session_state.user_level = None
 
 def login():
-    # On nettoie le code entré
     code_entre = st.session_state.input_code.strip()
-    
-    # Lecture sécurisée des secrets
     try:
         users_db = st.secrets["auth"]["users"]
     except Exception as e:
-        st.error(f"Problème de lecture des secrets : {e}")
+        st.error(f"Erreur de lecture des codes: {e}")
         return
 
     if code_entre in users_db:
@@ -76,7 +73,7 @@ if not st.session_state.auth:
     st.text_input("Code :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 4. NAVIGATION FILTRÉE ---
+# --- 4. NAVIGATION ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     st.caption(f"Niveau : {st.session_state.user_level}")
@@ -84,17 +81,16 @@ with st.sidebar:
     
     user_lvl = st.session_state.user_level
     
-    # Filtrage du menu
+    # Filtrage strict
     if user_lvl == "admin":
         options_niveau = list(PROGRAMME.keys())
     elif user_lvl in PROGRAMME:
         options_niveau = [user_lvl]
     else:
-        st.error(f"Erreur : Le niveau '{user_lvl}' n'existe pas dans le programme.")
+        st.error("Erreur de niveau.")
         st.stop()
             
     niveau = st.selectbox("1. Niveau :", options_niveau)
-    
     parties_dispo = list(PROGRAMME[niveau].keys())
     partie = st.selectbox("2. Partie :", parties_dispo)
     lecons_dispo = PROGRAMME[niveau][partie]
@@ -108,24 +104,29 @@ with st.sidebar:
         st.session_state.user_level = None
         st.rerun()
 
-# --- 5. INTELLIGENCE ARTIFICIELLE ---
+# --- 5. CERVEAU ET INSTRUCTIONS ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur de Physique-Chimie pédagogue."
-    TON = "Calme, détaillé. Tu donnes la réponse et tu expliques."
+    TON = "Calme, détaillé. Tu expliques les concepts."
 else:
     ROLE = "Tu es un Coach d'examen."
     TON = "Tu guides l'élève. Tu ne donnes pas la réponse tout de suite."
 
+# --- C'est ICI que nous forçons les Maths ---
 SYSTEM_PROMPT = f"""
 {ROLE}
 TON : {TON}
 CONTEXTE : Niveau {niveau}, Partie {partie}, Leçon : {lecon}.
-RÈGLES :
-1. Tu es expert en Physique-Chimie (Maroc). Refuse le hors-sujet.
-2. Pour les graphiques : utilise Python (matplotlib) et affiche le code.
+
+RÈGLES IMPORTANTES :
+1. Tu es expert en Physique-Chimie (Maroc).
+2. MATHÉMATIQUES : Utilise TOUJOURS le format LaTeX pour les formules.
+   - Exemple : $\\vec{{F}} = m \\cdot \\vec{{a}}$
+   - Entoure bien les formules avec des dollars $.
+3. GRAPHIQUES : Si on te demande une courbe, génère le code Python (matplotlib).
 """
 
-# --- 6. CHAT & MULTIMÉDIA ---
+# --- 6. INTERFACE DE DISCUSSION ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
 st.subheader(f"{partie.replace('_', ' ')}")
 
@@ -139,7 +140,6 @@ with st.expander("📸 Envoyer un exercice", expanded=False):
         upl_img = st.file_uploader("Image", type=['png', 'jpg', 'jpeg'])
         if upl_img: img_file = upl_img
 
-# Historique
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
 
@@ -151,8 +151,10 @@ if st.session_state.current_lecon != lecon:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
-        if "image_data" in msg:
+        # Correction Bug Image
+        if "image_data" in msg and msg["image_data"] is not None:
             st.image(msg["image_data"], width=300)
+        
         if "figure_code" in msg:
             try:
                 exec(msg["figure_code"], {"plt": plt, "np": np, "st": st})
@@ -172,7 +174,7 @@ if prompt or img_file:
         image = Image.open(img_file)
         user_content.append(image)
         img_data_for_history = image
-        if not prompt: user_content.append("Résous cet exercice.")
+        if not prompt: user_content.append("Résous cet exercice en utilisant LaTeX pour les formules.")
 
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data_for_history})
     with st.chat_message("user"):
