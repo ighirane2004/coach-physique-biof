@@ -102,7 +102,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU (Modifications CRITIQUES sur le comportement) ---
+# --- 5. CERVEAU (Prompt Final Validé) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -114,18 +114,17 @@ CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
 RÈGLES D'ACTION CRUCIALES :
 1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : 
-   - NE GÉNÈRE JAMAIS de code Python (graphique ou molécule) si l'utilisateur ne l'a pas demandé explicitement (ex: "trace", "dessine", "montre la courbe").
-   - Si l'utilisateur donne juste des données ou demande une expression littérale, contente-toi du TEXTE et des formules LaTeX.
+   - NE GÉNÈRE JAMAIS de code Python si l'utilisateur ne l'a pas demandé explicitement (ex: "trace", "dessine").
+   - Si pas de demande graphique, réponds uniquement avec du TEXTE et des formules.
 
 2. **SI UN GRAPHIQUE EST DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
-   - **PROPORTIONS** : Utilise `plt.gca().set_aspect('equal', adjustable='datalim')` pour les trajectoires.
-   - **ZOOM** : Calcule les limites (min/max) et impose `plt.xlim(...)` et `plt.ylim(...)` pour centrer sur les données pertinentes.
-   - **VECTEURS** : Adapte le paramètre `scale` dans `plt.quiver` pour que les flèches soient visibles sans être géantes.
+   - **PROPORTIONS** : `plt.gca().set_aspect('equal', adjustable='datalim')` pour les trajectoires.
+   - **ZOOM** : Calcule `plt.xlim` et `plt.ylim` pour centrer le graphique sur les données.
+   - **VECTEURS** : Adapte le paramètre `scale` dans `quiver` pour que les flèches soient bien visibles.
 
-3. **PAS D'IMAGES HALLUCINÉES** : Ne mets JAMAIS de liens `![Alt](...)`.
-
-4. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
+3. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
+4. **PAS D'IMAGES HALLUCINÉES** : Pas de liens `![...]`.
 """
 
 # --- 6. INTERFACE ---
@@ -180,7 +179,8 @@ if prompt or img_file:
     display_txt = prompt if prompt else "Analyse..."
     if prompt:
         history_context = "CONTEXTE (Rappel) :\n"
-        recent_msgs = st.session_state.messages[-6:] 
+        # --- MODIFICATION CRUCIALE ICI : 40 messages au lieu de 6 ---
+        recent_msgs = st.session_state.messages[-40:] 
         for msg in recent_msgs:
             role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
             clean_msg = msg["display_text"].replace("```python", "").replace("```", "")
@@ -230,7 +230,7 @@ if prompt or img_file:
                         plt.close()
                         valid_codes.append(code)
                     except Exception as e:
-                        st.error(f"Oups, une erreur dans le tracé : {e}")
+                        st.error(f"Erreur technique : {e}")
 
                 st.session_state.messages.append({
                     "role": "assistant", 
