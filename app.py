@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import re
 
-# --- IMPORTS CHIMIE (Gestion silencieuse) ---
+# --- IMPORTS CHIMIE (Si disponibles) ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
@@ -22,10 +22,10 @@ try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("⚠️ Erreur : Clé API non configurée dans les Secrets.")
+    st.error("⚠️ Erreur : Clé API non configurée.")
     st.stop()
 
-# --- 2. PROGRAMME SCOLAIRE ---
+# --- 2. PROGRAMME ---
 PROGRAMME = {
     "2bac": {
         "Physique_1_Ondes": ["1_Ondes_progressives.pdf", "2_Ondes_periodiques.pdf", "3_Ondes_lumineuses.pdf"],
@@ -63,7 +63,7 @@ def login():
     try:
         users_db = st.secrets["auth"]["users"]
     except:
-        st.error("Erreur de configuration (Secrets).")
+        st.error("Erreur Secrets.")
         return
 
     if code_entre in users_db:
@@ -101,37 +101,39 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU (Instructions Système) ---
+# --- 5. CERVEAU (Modifié pour forcer le code caché) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
-    ROLE = "Tu es un Coach. Tu guides l'élève pas à pas."
+    ROLE = "Tu es un Coach."
 
 SYSTEM_PROMPT = f"""
 {ROLE}
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
-RÈGLES D'ACTION :
-1. **MODE EXÉCUTANT** : Si l'élève demande un schéma, une courbe ou une molécule, FAIS-LE immédiatement.
-   - Ne demande pas "Voulez-vous le code ?".
-   - Utilise Python silencieusement.
+RÈGLES D'ACTION CRUCIALES :
+1. **LE CODE EST OBLIGATOIRE MAIS INVISIBLE** : 
+   - Si l'élève demande un graphique ou une molécule, tu DOIS générer le code Python correspondant.
+   - Même si l'élève dit "Donne-moi le graphe SANS le code", il veut dire "Ne m'affiche pas le TEXTE du code".
+   - Tu DOIS donc générer le bloc ```python ... ``` pour que l'application puisse tracer la courbe. SANS CE BLOC, RIEN NE S'AFFICHERA.
 
-2. **CHIMIE ORGANIQUE** :
-   - Pour dessiner : Utilise `rdkit`.
-   - Code type : `from rdkit import Chem; from rdkit.Chem import Draw; mol = Chem.MolFromSmiles('SMILES'); img = Draw.MolToImage(mol); plt.imshow(img); plt.axis('off')`
+2. **PAS DE LIENS D'IMAGES** : 
+   - NE GÉNÈRE JAMAIS de liens Markdown comme `![Image](...)`. Cela crée des erreurs.
+   - Utilise UNIQUEMENT le code Python (Matplotlib/Rdkit).
 
-3. **MATHS & LATEX** :
-   - Écris les formules mathématiques en LaTeX entre dollars $.
-   - Exemple : $E_c = \\frac{{1}}{{2}} m v^2$.
+3. **CHIMIE ORGANIQUE** :
+   - Utilise `rdkit` pour dessiner.
 
-4. **SILENCE TECHNIQUE** :
-   - Ne montre JAMAIS le code Python à l'élève. Affiche uniquement le résultat visuel.
+4. **MATHS** :
+   - Formules en LaTeX entre $.
+
+5. **SILENCE** :
+   - Génère le code Python, mais ne dis pas "Voici le code". Dis juste "Voici la représentation :".
 """
 
-# --- 6. CHAT & INTERFACE ---
+# --- 6. INTERFACE ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
 
-# Zone d'upload
 with st.expander("📸 Envoyer une image", expanded=False):
     tab_cam, tab_upl = st.tabs(["Caméra", "Fichier"])
     img_file = None
@@ -145,13 +147,11 @@ with st.expander("📸 Envoyer une image", expanded=False):
 # Initialisation
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
-
 if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
-    st.toast("Nouveau cours chargé.", icon="📚")
 
-# Affichage de l'historique
+# Affichage Historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
@@ -172,26 +172,22 @@ for msg in st.session_state.messages:
                 plt.close()
             except: pass
 
-# --- ZONE DE SAISIE AVEC MÉMOIRE ---
-prompt = st.chat_input("Pose ta question ou demande un dessin...")
+# Saisie
+prompt = st.chat_input("Pose ta question...")
 
 if prompt or img_file:
     user_content = []
     
-    # 1. Construction du contexte (Mémoire)
-    display_txt = prompt if prompt else "Analyse image..."
-    
+    # Mémoire
+    display_txt = prompt if prompt else "Analyse..."
     if prompt:
-        # On récupère les 6 derniers messages pour la mémoire
-        history_context = "CONTEXTE (Discussion précédente) :\n"
+        history_context = "CONTEXTE (Rappel) :\n"
         recent_msgs = st.session_state.messages[-6:] 
         for msg in recent_msgs:
             role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
-            # Nettoyage du code technique pour la mémoire
-            clean_msg = msg["display_text"].replace("```python", "[Code Graphique]").replace("```", "")
+            clean_msg = msg["display_text"].replace("```python", "").replace("```", "")
             history_context += f"- {role_label} : {clean_msg}\n"
         
-        # On injecte le rappel avant la question actuelle
         final_prompt_text = f"{history_context}\n\nQUESTION ACTUELLE : {prompt}"
         user_content.append(final_prompt_text)
     
@@ -199,35 +195,40 @@ if prompt or img_file:
     if img_file:
         img_data = Image.open(img_file)
         user_content.append(img_data)
-        if not prompt: user_content.append("Analyse ceci en tenant compte de la discussion.")
+        if not prompt: user_content.append("Analyse ceci.")
 
-    # 2. Affichage immédiat
+    # Affichage immédiat
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
     with st.chat_message("user"):
         st.markdown(display_txt)
         if img_data: st.image(img_data, width=300)
 
-    # 3. Réponse IA
+    # Réponse IA
     with st.chat_message("assistant"):
-        with st.spinner("Réflexion..."):
+        with st.spinner("..."):
             try:
                 model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
-                
                 response = model.generate_content(user_content)
                 text = response.text
                 
-                # Extraction et Nettoyage du Code
+                # --- EXTRACTION ET NETTOYAGE ---
                 code = None
+                
+                # 1. On cherche le code Python
                 if "```python" in text:
                     match = re.search(r'```python(.*?)```', text, re.DOTALL)
                     if match:
                         code = match.group(1)
-                        # On retire le code de l'affichage texte
+                        # On retire le code du texte visible
                         text = text.replace(match.group(0), "")
+                
+                # 2. On supprime les liens d'images Markdown brisés (le bug que vous aviez)
+                # Cette ligne retire tout ce qui ressemble à ![Alt](path)
+                text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
                 
                 st.markdown(text)
                 
-                # Exécution du Graphique / Molécule
+                # Exécution graphique
                 if code:
                     try:
                         exec_globals = {"plt": plt, "np": np, "st": st}
@@ -242,12 +243,10 @@ if prompt or img_file:
                         st.pyplot(plt.gcf())
                         plt.close()
                     except Exception as e:
-                        st.warning(f"Erreur d'affichage graphique : {e}")
+                        st.warning(f"Erreur graphique : {e}")
 
-                # Sauvegarde
                 st.session_state.messages.append({"role": "assistant", "display_text": text, "figure_code": code})
                 
-                # Audio (TTS)
                 try:
                     clean_text = text.replace("*","").replace("$", "")
                     tts = gTTS(clean_text, lang='fr')
@@ -257,4 +256,4 @@ if prompt or img_file:
                 except: pass
 
             except Exception as e:
-                st.error(f"Erreur de connexion : {e}")
+                st.error(f"Erreur : {e}")
