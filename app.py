@@ -129,7 +129,6 @@ with st.sidebar:
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
 
-    # --- MICROPHONE ---
     st.markdown("### 🎤 Vocal")
     audio_val = st.audio_input("Poser une question")
 
@@ -151,11 +150,11 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. CERVEAU ---
+# --- 6. CERVEAU (Prompt Pédagogue) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
-    ROLE = "Tu es un Coach."
+    ROLE = "Tu es un Coach Socratique." # On insiste sur le côté Coach
 
 SYSTEM_PROMPT = f"""
 {ROLE}
@@ -166,15 +165,21 @@ RÈGLES D'ACTION :
    - Si la question ne concerne PAS la Physique, la Chimie ou les Maths, REFUSE FERMEMENT.
    - Réponds : "Je suis un assistant spécialisé en Physique-Chimie. Je ne peux pas répondre à cette question."
 
-2. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande explicite = Pas de code.
+2. **PÉDAGOGIE (INTERDICTION DE RÉSOUDRE)** :
+   - Si l'élève demande de résoudre un exercice ou envoie une image d'exercice : **REFUSE DE DONNER LA RÉPONSE DIRECTEMENT**.
+   - Dis plutôt : "Je suis là pour t'aider à comprendre, pas pour faire le devoir à ta place. Qu'est-ce que tu proposes comme première étape ?" ou "Quelle formule de ton cours pourrais-tu utiliser ici ?".
+   - **Mode Guidage** : Pose des questions, donne des indices (formules, rappels de cours).
+   - **Solution Finale** : Ne donne la solution complète qu'après **3 tentatives incorrectes** ou abandons explicites de l'élève.
 
-3. **SI GRAPHIQUE DEMANDÉ** :
+3. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande explicite = Pas de code.
+
+4. **SI GRAPHIQUE DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
    - **CHIMIE ORGA** : `rdkit` + `plt.imshow`. **PAS de IPython**.
    - **PHYSIQUE** : `plt.gca().set_aspect('equal')`, `plt.xlim/ylim` manuel.
 
-4. **CONTENU** : Maths ($\LaTeX$).
-5. **PAS D'IMAGES HALLUCINÉES**.
+5. **CONTENU** : Maths ($\LaTeX$).
+6. **PAS D'IMAGES HALLUCINÉES**.
 """
 
 # --- 7. INTERFACE ---
@@ -223,36 +228,29 @@ for msg in st.session_state.messages:
                     plt.close()
                 except: pass
 
-# --- ZONE DE SAISIE PRINCIPALE ---
-# Par défaut, chat_input se met toujours en bas.
+# --- ZONE DE SAISIE ---
 prompt = st.chat_input("Pose ta question ici...")
 
-# --- LOGIQUE DE TRAITEMENT UNIFIÉE (Stable) ---
-# On détecte si on doit traiter une entrée (Texte, Audio ou Image)
+# --- LOGIQUE ---
 input_a_traiter = False
 type_input = None
 
-# Gestion de l'audio pour éviter les boucles (On ne traite que s'il est nouveau)
 if audio_val and ("last_audio" not in st.session_state or st.session_state.last_audio != audio_val):
     input_a_traiter = True
     type_input = "audio"
-    st.session_state.last_audio = audio_val # On mémorise pour ne pas le retraiter en boucle
+    st.session_state.last_audio = audio_val 
 
 if prompt:
     input_a_traiter = True
     type_input = "text"
 
-if img_file and not input_a_traiter: # Si image seule sans texte
-    # On vérifie si c'est une nouvelle image (simple check)
-    input_a_traiter = True
-    type_input = "image_only"
-
+if img_file and not input_a_traiter:
+    st.toast("📸 Image chargée ! Posez votre question pour l'analyser.", icon="✅")
 
 if input_a_traiter:
     user_content = []
     display_txt = "Analyse..."
     
-    # 1. Construction du message
     if type_input == "text":
         display_txt = prompt
         history_context = "CONTEXTE (Rappel) :\n"
@@ -267,25 +265,19 @@ if input_a_traiter:
     elif type_input == "audio":
         display_txt = "🎤 *Question vocale reçue*"
         user_content.append({"mime_type": "audio/wav", "data": audio_val.getvalue()})
-        user_content.append("Réponds à ce message vocal de l'élève. Utilise le contexte précédent si nécessaire.")
+        user_content.append("Réponds à ce message vocal. Utilise le contexte précédent si nécessaire.")
 
-    elif type_input == "image_only":
-        user_content.append("Analyse cette image.")
-    
-    # Ajout de l'image si présente (même avec texte/audio)
     img_data = None
     if img_file:
         img_data = Image.open(img_file)
         user_content.append(img_data)
 
-    # 2. Affichage immédiat (User)
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
     with st.chat_message("user"):
         st.markdown(display_txt)
         if img_data: st.image(img_data, width=300)
         if type_input == "audio": st.audio(audio_val)
 
-    # 3. Génération Réponse (IA)
     with st.chat_message("assistant"):
         with st.spinner("Réflexion..."):
             try:
