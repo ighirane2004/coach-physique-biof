@@ -8,140 +8,185 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Plateforme Physique-Chimie", page_icon="⚛️", layout="wide")
+
 try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("Clé API manquante.")
+    st.error("Erreur critique : Clé API manquante.")
     st.stop()
 
-FICHIER_COURS = "cours_reference.pdf"
-DOSSIER_SCHEMAS = "schémas"
+# --- 2. PROGRAMME (PC) ---
+PROGRAMME = {
+    "Tronc Commun": {
+        "Physique - Gravitation": "contenu/tronc_commun/mecanique_gravitation.pdf",
+        "Chimie - Espèces Chimiques": "contenu/tronc_commun/chimie_especes.pdf"
+    },
+    "1ère Bac": {
+        "Physique - Travail & Énergie": "contenu/1bac/phy_travail_energie.pdf",
+        "Chimie - Mesures": "contenu/1bac/chi_mesures.pdf"
+    },
+    "2ème Bac": {
+        "Physique - Ondes": "contenu/2bac/phy_ondes.pdf",
+        "Physique - Nucléaire": "contenu/2bac/phy_nucleaire.pdf",
+        "Physique - Modulation d'Amplitude": "contenu/2bac/phy_modulation.pdf",
+        "Physique - Électricité (RLC)": "contenu/2bac/phy_electricite_rlc.pdf",
+        "Chimie - Cinétique": "contenu/2bac/chi_cinetique.pdf"
+    }
+}
 
-st.set_page_config(page_title="Coach Physique Pro", page_icon="⚛️")
+# --- 3. SÉCURITÉ ---
+if "auth" not in st.session_state: st.session_state.auth = False
 
-# --- 2. DIAGNOSTIC MODÈLES (Pour trouver le bon) ---
-with st.sidebar:
-    st.header("🔍 Diagnostic")
+def login():
+    code = st.session_state.input_code.strip()
     try:
-        my_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        st.success(f"{len(my_models)} modèles détectés")
-        modele_choisi = st.selectbox("Modèle actif :", my_models, index=0)
-    except:
-        st.warning("Scan échoué, utilisation défaut")
-        modele_choisi = "models/gemini-1.5-flash"
+        if code in st.secrets["auth"]["codes_valides"]:
+            st.session_state.auth = True
+            st.session_state.user_id = code
+        else:
+            st.error("Code non reconnu.")
+    except: st.error("Erreur technique.")
 
-# --- 3. FONCTIONS ---
+if not st.session_state.auth:
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.title("🔐 Espace BIOF")
+        st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
+    st.stop()
+
+# --- 4. SIDEBAR ---
+with st.sidebar:
+    st.header(f"👤 {st.session_state.user_id}")
+    st.divider()
+    
+    niveau_choisi = st.selectbox("1. Niveau :", list(PROGRAMME.keys()))
+    cours_dispo = list(PROGRAMME[niveau_choisi].keys())
+    chapitre_choisi = st.selectbox("2. Chapitre :", cours_dispo)
+    mode_choisi = st.radio("3. Mode :", ["🎓 Professeur", "🏋️ Coach"], index=1)
+    
+    chemin_pdf = PROGRAMME[niveau_choisi][chapitre_choisi]
+    if os.path.exists(chemin_pdf): st.caption("✅ Cours chargé")
+    
+    if st.button("Déconnexion"):
+        st.session_state.auth = False
+        st.rerun()
+
+# --- 5. CERVEAU & RÈGLES STRICTES ---
+
+# Définition du rôle
+if "Professeur" in mode_choisi:
+    ROLE = "Tu es un Professeur de Physique-Chimie pédagogue."
+    TON = "Calme, explicatif, patient."
+else:
+    ROLE = "Tu es un Coach d'examen impitoyable mais juste."
+    TON = "Direct, bref, motivant."
+
+# LE BLINDAGE EST ICI (Lisez bien cette partie)
+SYSTEM_PROMPT = f"""
+{ROLE}
+TON : {TON}
+CONTEXTE : Programme marocain, Niveau {niveau_choisi}, Chapitre : {chapitre_choisi}.
+
+⛔ PROTOCOLE DE SÉCURITÉ (OBLIGATOIRE) :
+1. DOMAINE STRICT : Tu es EXCLUSIVEMENT un expert en PHYSIQUE et CHIMIE.
+2. INTERDICTION FORMELLE : Si l'utilisateur pose une question sur la BIOLOGIE (SVT, Chlorophylle, Corps humain...), l'Histoire, la Philo ou l'Informatique :
+   -> TU DOIS REFUSER DE RÉPONDRE.
+   -> Réponds exactement : "🚫 Hors Sujet. Je suis ton coach de Physique-Chimie uniquement. Concentre-toi."
+3. Ne sois pas gentil si c'est hors sujet. Bloque la conversation.
+
+INSTRUCTIONS PÉDAGOGIQUES :
+- Si on parle de Modulation d'Amplitude : Trace l'enveloppe en rouge si demandé.
+- Ne montre jamais le code Python.
+- Utilise Matplotlib pour les graphes.
+"""
+
+# --- 6. FONCTIONS ---
 def executer_code_python(code):
     try:
         local_vars = {}
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(8, 5))
         exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
-        fig = plt.gcf()
-        st.pyplot(fig)
-        plt.close(fig)
-    except Exception as e:
-        st.error(f"Erreur graphe : {e}")
+        st.pyplot(plt.gcf())
+        plt.close()
+    except: st.error("Erreur tracé.")
 
 def get_images():
-    if not os.path.exists(DOSSIER_SCHEMAS): return []
-    return [f for f in os.listdir(DOSSIER_SCHEMAS) if f.lower().endswith(('.png','.jpg'))]
+    if not os.path.exists("schémas"): return []
+    return [f for f in os.listdir("schémas") if f.lower().endswith(('.png','.jpg'))]
 
-# --- 4. PROMPT ---
-SYSTEM_PROMPT = f"""
-Tu es un professeur de Physique-Chimie expert.
-RÈGLES :
-1. Pédagogie active. Ne donne pas la solution sèche.
-2. Ne montre JAMAIS le code Python.
-3. Si graphique demandé : trace-le avec matplotlib (code entre ```python ... ```).
-4. Images dispo : {", ".join(get_images())}.
-"""
+# --- 7. CHAT ---
+st.title(f"{chapitre_choisi}")
 
-# --- 5. INTERFACE ---
-st.title("⚛️ Coach Physique & Chimie")
-
-with st.expander("📸 Zone Multimédia", expanded=True):
-    tab1, tab2, tab3 = st.tabs(["Fichier", "Caméra", "Micro"])
-    user_image = None
+# Upload Photo/Audio
+with st.expander("📸 Zone Multimédia"):
+    tab1, tab2 = st.tabs(["📷 Photo", "🎤 Micro"])
+    user_img = None
     user_audio = None
-    
     with tab1:
-        up = st.file_uploader("Image", type=["jpg","png"])
-        if up: user_image = Image.open(up)
-    with tab2:
         cam = st.camera_input("Photo")
-        if cam: user_image = Image.open(cam)
-    with tab3:
-        # Compatible Streamlit récent
+        if cam: user_img = Image.open(cam)
+    with tab2:
         aud = st.audio_input("Vocal")
         if aud: user_audio = aud
 
-# --- 6. MOTEUR ---
+# Gestion message
 if "messages" not in st.session_state: st.session_state.messages = []
+if "current_chap" not in st.session_state: st.session_state.current_chap = chapitre_choisi
+
+# Reset si changement de chapitre
+if st.session_state.current_chap != chapitre_choisi:
+    st.session_state.messages = []
+    st.session_state.current_chap = chapitre_choisi
+    st.toast("Nouveau chapitre !")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
         if "figure_code" in msg: executer_code_python(msg["figure_code"])
 
-prompt = st.chat_input("Message...")
+prompt = st.chat_input("Ta question...")
 
-if prompt or user_audio or user_image:
-    # 1. Affichage User
-    txt_user = prompt if prompt else ("🎤 [Audio]" if user_audio else "🖼️ [Image]")
-    st.session_state.messages.append({"role": "user", "display_text": txt_user})
+if prompt or user_audio or user_img:
+    user_txt = prompt if prompt else ("🎤 [Audio]" if user_audio else "🖼️ [Image]")
+    st.session_state.messages.append({"role": "user", "display_text": user_txt})
+    
     with st.chat_message("user"):
-        st.markdown(txt_user)
-        if user_image: st.image(user_image, width=200)
+        st.markdown(user_txt)
+        if user_img: st.image(user_img, width=200)
 
-    # 2. Appel API
     with st.chat_message("assistant"):
-        spin = st.empty()
         with st.spinner("Analyse..."):
             try:
-                model = genai.GenerativeModel(modele_choisi, system_instruction=SYSTEM_PROMPT)
+                model = genai.GenerativeModel("models/gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
                 
-                content_parts = []
-                if prompt: content_parts.append(prompt)
-                elif not user_audio: content_parts.append("Analyse ceci.")
-                
-                if user_image: content_parts.append(user_image)
-                
-                # --- CORRECTION AUDIO ---
-                if user_audio:
-                    audio_bytes = user_audio.getvalue() # On récupère les octets
-                    audio_blob = {
-                        "mime_type": user_audio.type, # ex: audio/wav
-                        "data": audio_bytes
-                    }
-                    content_parts.append(audio_blob)
+                parts = []
+                if prompt: parts.append(prompt)
+                elif not user_audio: parts.append("Analyse ceci.")
+                if user_img: parts.append(user_img)
+                if user_audio: parts.append({"mime_type": user_audio.type, "data": user_audio.getvalue()})
 
-                response = model.generate_content(content_parts)
-                text_out = response.text
+                resp = model.generate_content(parts)
+                text = resp.text
                 
-                # Extraction Code
-                code_found = None
-                if "```python" in text_out:
-                    parts = text_out.split("```python")
-                    code_found = parts[1].split("```")[0]
-                    text_out = parts[0] + parts[1].split("```")[1]
+                code = None
+                if "```python" in text:
+                    seg = text.split("```python")
+                    code = seg[1].split("```")[0]
+                    text = seg[0] + seg[1].split("```")[1]
 
-                spin.markdown(text_out)
-                if code_found: executer_code_python(code_found)
+                st.markdown(text)
+                if code: executer_code_python(code)
                 
-                # Audio TTS
                 try:
-                    tts = gTTS(text=text_out.replace("*",""), lang='fr')
+                    tts = gTTS(text.replace("*",""), lang='fr')
                     bio = io.BytesIO()
                     tts.write_to_fp(bio)
                     st.audio(bio, format='audio/mp3')
                 except: pass
 
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "display_text": text_out,
-                    "figure_code": code_found
-                })
-
+                st.session_state.messages.append({"role": "assistant", "display_text": text, "figure_code": code})
+            
             except Exception as e:
                 st.error(f"Erreur : {e}")
