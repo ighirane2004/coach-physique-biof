@@ -14,25 +14,35 @@ try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("Erreur critique : Clé API manquante.")
+    st.error("Erreur critique : Clé API manquante dans les secrets.")
     st.stop()
 
-# --- 2. PROGRAMME (PC) ---
+# --- 2. DÉFINITION DU PROGRAMME (Identique à votre dossier) ---
+# Cette structure permet à l'application de savoir quel fichier chercher
 PROGRAMME = {
-    "Tronc Commun": {
-        "Physique - Gravitation": "contenu/tronc_commun/mecanique_gravitation.pdf",
-        "Chimie - Espèces Chimiques": "contenu/tronc_commun/chimie_especes.pdf"
+    "2bac": {
+        "Physique_1_Ondes": ["1_Ondes_progressives.pdf", "2_Ondes_periodiques.pdf", "3_Ondes_lumineuses.pdf"],
+        "Physique_2_Nucleaire": ["1_Decroissance_radioactive.pdf", "2_Noyau_masse_energie.pdf"],
+        "Physique_3_Electricite": ["1_Dipole_RC.pdf", "2_Dipole_RL.pdf", "3_Oscillations_RLC_serie.pdf", "4_Modulation_amplitude.pdf"],
+        "Physique_4_Mecanique": ["1_Lois_de_Newton.pdf", "2_Chute_verticale.pdf", "3_Mouvements_plans.pdf", "4_Satellites_et_planetes.pdf", "5_Rotation_solide.pdf", "6_Systemes_oscillants.pdf", "7_Aspects_energetiques.pdf", "8_Atome_et_mecanique_Newton.pdf"],
+        "Chimie_1_Lentes_Rapides": ["1_Transformations_lentes_rapides.pdf", "2_Suivi_temporel.pdf"],
+        "Chimie_2_Transformations_Incompletes": ["1_Equilibre_chimique.pdf", "2_Reactions_acido_basiques.pdf", "3_Dosage_acido_basique.pdf"],
+        "Chimie_3_Sens_Evolution": ["1_Evolution_spontanee.pdf", "2_Piles_et_energie.pdf", "3_Transformations_forcees.pdf"],
+        "Chimie_4_Organique": ["1_Esterification_hydrolyse.pdf", "2_Controle_evolution.pdf"]
     },
-    "1ère Bac": {
-        "Physique - Travail & Énergie": "contenu/1bac/phy_travail_energie.pdf",
-        "Chimie - Mesures": "contenu/1bac/chi_mesures.pdf"
+    "1bac": {
+        "Physique_1_Travail_Energie": ["1_Rotation_solide_axe_fixe.pdf", "2_Travail_puissance_force.pdf", "3_Travail_energie_cinetique.pdf", "4_Energie_potentielle_mecanique.pdf"],
+        "Physique_2_Electricite_Magnetisme": ["5_Energie_electrique_recepteur.pdf", "6_Comportement_global_circuit.pdf", "7_Champ_magnetique.pdf", "8_Champ_magnetique_courant.pdf", "9_Forces_Laplace.pdf"],
+        "Physique_3_Optique": ["10_Visibilite_objet.pdf", "11_Images_miroir_plan.pdf", "12_Lentille_mince_convergente.pdf"],
+        "Chimie_1_Mesures": ["1_Importance_mesure.pdf", "2_Grandeurs_physiques.pdf", "3_Solutions_electrolytiques.pdf", "4_Suivi_transformation.pdf", "5_Conductimetrie.pdf", "6_Reactions_acido_basiques.pdf", "7_Reactions_oxydoreduction.pdf", "8_Dosages_directs.pdf"],
+        "Chimie_2_Organique": ["1_Extension_chimie_orga.pdf", "2_Lecture_formule_chimique.pdf", "3_Molecules_organiques.pdf", "4_Squelette_carbone.pdf", "5_Groupes_caracteristiques.pdf"]
     },
-    "2ème Bac": {
-        "Physique - Ondes": "contenu/2bac/phy_ondes.pdf",
-        "Physique - Nucléaire": "contenu/2bac/phy_nucleaire.pdf",
-        "Physique - Modulation d'Amplitude": "contenu/2bac/phy_modulation.pdf",
-        "Physique - Électricité (RLC)": "contenu/2bac/phy_electricite_rlc.pdf",
-        "Chimie - Cinétique": "contenu/2bac/chi_cinetique.pdf"
+    "tronc_commun": {
+        "Physique_1_Mecanique": ["1_Gravitation_universelle.pdf", "2_Actions_mecaniques.pdf", "3_Mouvement.pdf", "4_Principe_inertie.pdf", "5_Equilibre_deux_forces.pdf", "6_Equilibre_trois_forces.pdf", "7_Equilibre_rotation_axe.pdf"],
+        "Physique_2_Electricite": ["8_Courant_electrique.pdf", "9_Tension_electrique.pdf", "10_Associations_conducteurs.pdf", "11_Dipoles_passifs.pdf", "12_Dipoles_actifs.pdf", "13_Point_fonctionnement.pdf", "14_Transistor.pdf", "15_Amplificateur_operationnel.pdf"],
+        "Chimie_1_Autour_de_nous": ["1_Especes_chimiques.pdf", "2_Extraction_separation.pdf", "3_Synthese_especes.pdf"],
+        "Chimie_2_Constitution_matiere": ["4_Modele_atomique.pdf", "5_Geometrie_molecules.pdf", "6_Classification_periodique.pdf"],
+        "Chimie_3_Transformations": ["7_Quantite_matiere.pdf", "8_Concentration_molaire.pdf", "9_Avancement_reaction.pdf"]
     }
 }
 
@@ -45,140 +55,126 @@ def login():
         if code in st.secrets["auth"]["codes_valides"]:
             st.session_state.auth = True
             st.session_state.user_id = code
+            st.toast("Connexion réussie !")
         else:
-            st.error("Code non reconnu.")
-    except: st.error("Erreur technique.")
+            st.error("Code invalide.")
+    except:
+        st.error("Erreur de configuration des codes secrets.")
 
 if not st.session_state.auth:
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        st.title("🔐 Espace BIOF")
-        st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
+    st.title("🔐 Espace Sciences")
+    st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 4. SIDEBAR ---
+# --- 4. NAVIGATION INTELLECTUELLE ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     st.divider()
     
-    niveau_choisi = st.selectbox("1. Niveau :", list(PROGRAMME.keys()))
-    cours_dispo = list(PROGRAMME[niveau_choisi].keys())
-    chapitre_choisi = st.selectbox("2. Chapitre :", cours_dispo)
-    mode_choisi = st.radio("3. Mode :", ["🎓 Professeur", "🏋️ Coach"], index=1)
+    # Menu 1 : Niveau
+    niveau = st.selectbox("1. Niveau :", list(PROGRAMME.keys()))
     
-    chemin_pdf = PROGRAMME[niveau_choisi][chapitre_choisi]
-    if os.path.exists(chemin_pdf): st.caption("✅ Cours chargé")
+    # Menu 2 : Partie (Dépend du niveau)
+    parties_dispo = list(PROGRAMME[niveau].keys())
+    partie = st.selectbox("2. Partie :", parties_dispo)
     
+    # Menu 3 : Leçon (Dépend de la partie)
+    lecons_dispo = PROGRAMME[niveau][partie]
+    lecon = st.selectbox("3. Leçon :", lecons_dispo)
+    
+    # Menu 4 : Mode
+    mode = st.radio("4. Mode :", ["🎓 Professeur", "🏋️ Coach"])
+
+    # Construction du chemin vers le fichier (pour vérification)
+    chemin_fichier = os.path.join("contenu", niveau, partie, lecon)
+    
+    if os.path.exists(chemin_fichier):
+        st.success(f"Support actif : {lecon}")
+    else:
+        # C'est normal au début si les PDF sont vides ou mal nommés, l'IA compensera
+        st.caption(f"Fichier cible : {chemin_fichier}")
+
+    st.divider()
     if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU & RÈGLES STRICTES ---
-
-# Définition du rôle
-if "Professeur" in mode_choisi:
+# --- 5. LOGIQUE IA (PROMPT) ---
+if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur de Physique-Chimie pédagogue."
-    TON = "Calme, explicatif, patient."
+    TON = "Calme, détaillé, utilise des analogies."
 else:
-    ROLE = "Tu es un Coach d'examen impitoyable mais juste."
-    TON = "Direct, bref, motivant."
+    ROLE = "Tu es un Coach d'examen exigeant."
+    TON = "Direct, pose des questions, vérifie les acquis."
 
-# LE BLINDAGE EST ICI (Lisez bien cette partie)
 SYSTEM_PROMPT = f"""
 {ROLE}
 TON : {TON}
-CONTEXTE : Programme marocain, Niveau {niveau_choisi}, Chapitre : {chapitre_choisi}.
+SUJET ACTUEL : Niveau {niveau}, Partie {partie}, Leçon : {lecon}.
 
-⛔ PROTOCOLE DE SÉCURITÉ (OBLIGATOIRE) :
-1. DOMAINE STRICT : Tu es EXCLUSIVEMENT un expert en PHYSIQUE et CHIMIE.
-2. INTERDICTION FORMELLE : Si l'utilisateur pose une question sur la BIOLOGIE (SVT, Chlorophylle, Corps humain...), l'Histoire, la Philo ou l'Informatique :
-   -> TU DOIS REFUSER DE RÉPONDRE.
-   -> Réponds exactement : "🚫 Hors Sujet. Je suis ton coach de Physique-Chimie uniquement. Concentre-toi."
-3. Ne sois pas gentil si c'est hors sujet. Bloque la conversation.
-
-INSTRUCTIONS PÉDAGOGIQUES :
-- Si on parle de Modulation d'Amplitude : Trace l'enveloppe en rouge si demandé.
-- Ne montre jamais le code Python.
-- Utilise Matplotlib pour les graphes.
+RÈGLES STRICTES :
+1. Tu es expert en Physique-Chimie (Programme Marocain BIOF).
+2. Si la question concerne la SVT, l'Histoire, le Sport ou la Philosophie -> REFUSE DE RÉPONDRE ("Hors sujet").
+3. Si l'élève demande un graphique (modulation, ondes...), génère le code Python Matplotlib.
+4. Ne montre JAMAIS le code Python généré.
 """
 
-# --- 6. FONCTIONS ---
-def executer_code_python(code):
-    try:
-        local_vars = {}
-        plt.figure(figsize=(8, 5))
-        exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
-        st.pyplot(plt.gcf())
-        plt.close()
-    except: st.error("Erreur tracé.")
+# --- 6. INTERFACE CHAT ---
+st.title(lecon.replace(".pdf", "").replace("_", " "))
+st.caption(f"{partie.replace('_', ' ')}")
 
-def get_images():
-    if not os.path.exists("schémas"): return []
-    return [f for f in os.listdir("schémas") if f.lower().endswith(('.png','.jpg'))]
-
-# --- 7. CHAT ---
-st.title(f"{chapitre_choisi}")
-
-# Upload Photo/Audio
-with st.expander("📸 Zone Multimédia"):
-    tab1, tab2 = st.tabs(["📷 Photo", "🎤 Micro"])
-    user_img = None
-    user_audio = None
-    with tab1:
-        cam = st.camera_input("Photo")
-        if cam: user_img = Image.open(cam)
-    with tab2:
-        aud = st.audio_input("Vocal")
-        if aud: user_audio = aud
-
-# Gestion message
-if "messages" not in st.session_state: st.session_state.messages = []
-if "current_chap" not in st.session_state: st.session_state.current_chap = chapitre_choisi
-
-# Reset si changement de chapitre
-if st.session_state.current_chap != chapitre_choisi:
+# Gestion Historique par leçon (pour ne pas mélanger les cours)
+if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
+if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
-    st.session_state.current_chap = chapitre_choisi
-    st.toast("Nouveau chapitre !")
+    st.session_state.current_lecon = lecon
+    st.toast("Nouveau cours chargé !")
 
+# Affichage des messages
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
-        if "figure_code" in msg: executer_code_python(msg["figure_code"])
+        if "figure_code" in msg:
+            try:
+                exec(msg["figure_code"], {"plt": plt, "np": np, "st": st})
+                st.pyplot(plt.gcf())
+                plt.close()
+            except: pass
 
-prompt = st.chat_input("Ta question...")
+# Zone de saisie
+prompt = st.chat_input("Pose ta question sur ce cours...")
 
-if prompt or user_audio or user_img:
-    user_txt = prompt if prompt else ("🎤 [Audio]" if user_audio else "🖼️ [Image]")
-    st.session_state.messages.append({"role": "user", "display_text": user_txt})
-    
+if prompt:
+    st.session_state.messages.append({"role": "user", "display_text": prompt})
     with st.chat_message("user"):
-        st.markdown(user_txt)
-        if user_img: st.image(user_img, width=200)
+        st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Analyse..."):
+        with st.spinner("Réflexion..."):
             try:
                 model = genai.GenerativeModel("models/gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+                response = model.generate_content(prompt)
+                text = response.text
                 
-                parts = []
-                if prompt: parts.append(prompt)
-                elif not user_audio: parts.append("Analyse ceci.")
-                if user_img: parts.append(user_img)
-                if user_audio: parts.append({"mime_type": user_audio.type, "data": user_audio.getvalue()})
-
-                resp = model.generate_content(parts)
-                text = resp.text
-                
+                # Gestion du code Python caché
                 code = None
                 if "```python" in text:
-                    seg = text.split("```python")
-                    code = seg[1].split("```")[0]
-                    text = seg[0] + seg[1].split("```")[1]
+                    parts = text.split("```python")
+                    code = parts[1].split("```")[0]
+                    text = parts[0] + parts[1].split("```")[1]
 
                 st.markdown(text)
-                if code: executer_code_python(code)
+                if code:
+                    try:
+                        exec(code, {"plt": plt, "np": np, "st": st})
+                        st.pyplot(plt.gcf())
+                        plt.close()
+                    except Exception as e:
+                        st.error(f"Erreur graphique : {e}")
+
+                st.session_state.messages.append({"role": "assistant", "display_text": text, "figure_code": code})
                 
+                # Audio automatique (Optionnel)
                 try:
                     tts = gTTS(text.replace("*",""), lang='fr')
                     bio = io.BytesIO()
@@ -186,7 +182,5 @@ if prompt or user_audio or user_img:
                     st.audio(bio, format='audio/mp3')
                 except: pass
 
-                st.session_state.messages.append({"role": "assistant", "display_text": text, "figure_code": code})
-            
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                st.error(f"Erreur connexion IA : {e}")
