@@ -8,18 +8,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 import re
 
-# --- 1. CONFIGURATION ROBUSTE ---
+# --- IMPORTS CHIMIE (Si installés) ---
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+except ImportError:
+    pass # On gère ça silencieusement si pas installé
+
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Coach Physique-Chimie", page_icon="⚛️", layout="wide")
 
-# Vérification silencieuse de la clé API
 try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("⚠️ Erreur technique : Clé API non détectée.")
+    st.error("⚠️ Clé API non configurée.")
     st.stop()
 
-# --- 2. STRUCTURE DU PROGRAMME (Votre Base de Données) ---
+# --- 2. PROGRAMME ---
 PROGRAMME = {
     "2bac": {
         "Physique_1_Ondes": ["1_Ondes_progressives.pdf", "2_Ondes_periodiques.pdf", "3_Ondes_lumineuses.pdf"],
@@ -47,7 +53,7 @@ PROGRAMME = {
     }
 }
 
-# --- 3. SYSTÈME D'AUTHENTIFICATION INTELLIGENT ---
+# --- 3. AUTHENTIFICATION ---
 if "auth" not in st.session_state: 
     st.session_state.auth = False
     st.session_state.user_level = None
@@ -57,7 +63,7 @@ def login():
     try:
         users_db = st.secrets["auth"]["users"]
     except:
-        st.error("Erreur de configuration des accès.")
+        st.error("Erreur de configuration Secrets.")
         return
 
     if code_entre in users_db:
@@ -66,205 +72,155 @@ def login():
         st.session_state.user_level = users_db[code_entre]
         st.toast(f"✅ Connecté : {st.session_state.user_level}")
     else:
-        st.error("⛔ Code non reconnu.")
+        st.error("⛔ Code incorrect")
 
 if not st.session_state.auth:
     st.title("🔐 Espace Sciences")
-    st.markdown("Bienvenue sur votre plateforme de révision intelligente.")
-    st.text_input("Entrez votre code d'accès :", key="input_code", type="password", on_change=login)
+    st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 4. NAVIGATION CONTEXTUELLE ---
+# --- 4. MENU ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
-    st.caption(f"Profil : {st.session_state.user_level}")
-    st.divider()
-    
     user_lvl = st.session_state.user_level
     
-    # Filtrage strict des niveaux
-    if user_lvl == "admin":
-        options_niveau = list(PROGRAMME.keys())
-    elif user_lvl in PROGRAMME:
-        options_niveau = [user_lvl]
-    else:
-        st.error(f"Configuration profil invalide ({user_lvl}).")
-        st.stop()
+    if user_lvl == "admin": options_niveau = list(PROGRAMME.keys())
+    elif user_lvl in PROGRAMME: options_niveau = [user_lvl]
+    else: st.stop()
             
     niveau = st.selectbox("1. Niveau", options_niveau)
-    
-    # Menus dynamiques
     parties_dispo = list(PROGRAMME[niveau].keys()) if niveau in PROGRAMME else []
     partie = st.selectbox("2. Chapitre", parties_dispo)
-    
     lecons_dispo = PROGRAMME[niveau][partie] if partie in PROGRAMME[niveau] else []
     lecon = st.selectbox("3. Leçon", lecons_dispo)
     
     st.divider()
-    mode = st.radio("Mode d'assistance", ["🎓 Professeur (Explications)", "🏋️ Coach (Entraînement)"])
+    mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
     
-    st.divider()
-    if st.button("Se déconnecter"):
+    if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU : INSTRUCTION "TOUT-EN-UN" ---
-# C'est ici que nous définissons toutes les capacités scientifiques
-
+# --- 5. CERVEAU (Modifié pour être DIRECT) ---
 if mode == "🎓 Professeur":
-    ROLE = "Tu es un Professeur de Physique-Chimie expert et pédagogue."
-    TON = "Explique les concepts clairement, donne des exemples, et détaille les étapes."
+    ROLE = "Tu es un Professeur expert. Tu expliques clairement."
 else:
-    ROLE = "Tu es un Coach d'examen exigeant."
-    TON = "Ne donne pas la réponse finale tout de suite. Guide l'élève pas à pas. Vérifie chaque étape."
+    ROLE = "Tu es un Coach. Tu guides l'élève."
 
 SYSTEM_PROMPT = f"""
 {ROLE}
-TON : {TON}
-CONTEXTE : Programme Marocain (BIOF), Niveau {niveau}, Chapitre {partie}.
+CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
-RÈGLES ABSOLUES ET OUTILS OBLIGATOIRES :
+RÈGLES D'ACTION IMMÉDIATE (Vital) :
+1. **MODE "FAIS-LE"** : Si l'utilisateur demande de tracer, dessiner ou représenter quelque chose (molécule, courbe, schéma), **EXÉCUTE IMMÉDIATEMENT**.
+   - Ne pose PAS de questions ("Voulez-vous la formule développée ?").
+   - Choisis le format standard par défaut (ex: Molécule en 2D topologique, Courbe temporelle standard).
+   - Génère le code Python silencieusement.
 
-1. **SILENCE TECHNIQUE (Vital)** : 
-   - Ne dis JAMAIS "Voici le code Python" ou "J'utilise matplotlib".
-   - L'élève ne doit voir que le résultat (courbe, image, tableau).
-   - Contente-toi de dire : "Voici la représentation demandée :" ou "Voici le schéma :".
+2. **CHIMIE ORGANIQUE** :
+   - Pour dessiner une molécule, utilise la bibliothèque `rdkit`.
+   - Code Python : `from rdkit import Chem; from rdkit.Chem import Draw; mol = Chem.MolFromSmiles('CODE_SMILES'); img = Draw.MolToImage(mol); plt.imshow(img); plt.axis('off')`
 
-2. **FORMULES & MATHS (LaTeX)** :
-   - TOUTES les expressions mathématiques doivent être en LaTeX.
-   - Utilise toujours les balises dollars $.
-   - Exemples : $\\vec{{P}} = m \\cdot \\vec{{g}}$, $pH = -\\log[H_3O^+]$, $\\int_{{t_1}}^{{t_2}} i(t) dt$.
-   - Pour les vecteurs : Utilise toujours `\\vec{{}}`.
+3. **MATHS & LATEX** :
+   - Utilise LaTeX UNIQUEMENT pour les formules dans le texte (entre $).
+   - N'utilise JAMAIS de LaTeX à l'intérieur du bloc de code Python (cela crée des erreurs).
+   - Dans les titres de graphiques Python, n'utilise pas d'accents ni de LaTeX complexe.
 
-3. **COURBES & GRAPHIQUES (Python Matplotlib)** :
-   - Si la question implique une évolution temporelle, une courbe (ex: $u_C(t)$, titrage pH, modulation), TU DOIS générer un graphique.
-   - Génère le code Python silencieusement dans un bloc ```python.
-   - Assure-toi que les axes sont nommés (xlabel, ylabel) et qu'il y a un titre.
-
-4. **CHIMIE ORGANIQUE & MOLÉCULES** :
-   - Pour les formules développées/semi-développées, utilise soit du LaTeX (chimie), soit une représentation texte claire alignée.
-   - Pour les tableaux d'avancement : Utilise le format Markdown standard pour créer un tableau clair.
-
-5. **NON-REPONSE** :
-   - Si la question est hors du programme de Physique-Chimie (ex: SVT, Philosophie, Sport), réponds poliment que tu es spécialisé uniquement en Sciences Physiques.
+4. **SILENCE TECHNIQUE** :
+   - Ne dis jamais "Voici le code". Affiche juste le résultat.
 """
 
-# --- 6. MOTEUR DE CHAT ET D'AFFICHAGE ---
+# --- 6. CHAT ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
-st.caption(f"Chapitre : {partie.replace('_', ' ')}")
 
-# Zone d'upload (Image d'exercice)
-with st.expander("📸 Analyser un exercice (Photo/Image)", expanded=False):
-    tab_cam, tab_upl = st.tabs(["📸 Caméra", "📂 Fichier"])
+with st.expander("📸 Envoyer une image", expanded=False):
+    tab_cam, tab_upl = st.tabs(["Caméra", "Fichier"])
     img_file = None
     with tab_cam:
-        cam_img = st.camera_input("Prendre une photo")
-        if cam_img: img_file = cam_img
+        c = st.camera_input("Photo")
+        if c: img_file = c
     with tab_upl:
-        upl_img = st.file_uploader("Importer une image", type=['png', 'jpg', 'jpeg'])
-        if upl_img: img_file = upl_img
+        u = st.file_uploader("Upload", type=['png', 'jpg', 'jpeg'])
+        if u: img_file = u
 
-# Initialisation Historique
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
-
-# Reset si changement de leçon
 if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
-    st.toast("Support de cours chargé.", icon="📚")
 
-# Affichage de l'historique de conversation
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
-        
-        # Ré-affichage sécurisé de l'image si elle existe
-        if "image_data" in msg and msg["image_data"] is not None:
-            st.image(msg["image_data"], width=300)
-        
-        # Ré-exécution du graphique si présent
+        if "image_data" in msg and msg["image_data"]: st.image(msg["image_data"], width=300)
         if "figure_code" in msg and msg["figure_code"]:
             try:
-                # Création d'un contexte propre pour chaque figure
-                exec(msg["figure_code"], {"plt": plt, "np": np, "st": st})
+                # Import dynamique pour être sûr que ça marche dans le contexte d'exécution
+                exec_globals = {"plt": plt, "np": np, "st": st}
+                try: 
+                    from rdkit import Chem
+                    from rdkit.Chem import Draw
+                    exec_globals["Chem"] = Chem
+                    exec_globals["Draw"] = Draw
+                except: pass
+                
+                exec(msg["figure_code"], exec_globals)
                 st.pyplot(plt.gcf())
                 plt.close()
             except: pass
 
-# --- TRAITEMENT DE LA QUESTION ---
-prompt = st.chat_input("Posez votre question, demandez une courbe, ou envoyez une photo...")
+prompt = st.chat_input("Pose ta question ou demande un dessin...")
 
 if prompt or img_file:
-    # 1. Préparation du contenu utilisateur
     user_content = []
-    display_txt = prompt if prompt else "Analyse de l'exercice ci-joint."
+    if prompt: user_content.append(prompt)
+    display_txt = prompt if prompt else "Analyse image..."
     
-    if prompt: 
-        user_content.append(prompt)
-    
-    img_data_for_history = None
+    img_data = None
     if img_file:
-        try:
-            image = Image.open(img_file)
-            user_content.append(image)
-            img_data_for_history = image
-            if not prompt: 
-                user_content.append("Résous cet exercice en détaillant les étapes (Tableau d'avancement, Graphique ou Calculs si nécessaire).")
-        except:
-            st.error("Erreur de lecture de l'image.")
+        img_data = Image.open(img_file)
+        user_content.append(img_data)
+        if not prompt: user_content.append("Résous ceci.")
 
-    # 2. Sauvegarde message utilisateur
-    st.session_state.messages.append({
-        "role": "user", 
-        "display_text": display_txt, 
-        "image_data": img_data_for_history
-    })
-    
+    st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
     with st.chat_message("user"):
         st.markdown(display_txt)
-        if img_data_for_history: st.image(img_data_for_history, width=300)
+        if img_data: st.image(img_data, width=300)
 
-    # 3. Génération Réponse IA
     with st.chat_message("assistant"):
-        with st.spinner("Analyse scientifique en cours..."):
+        with st.spinner("Traitement..."):
             try:
-                # Appel au modèle le plus performant (Gemini 2.0 Flash)
                 model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
                 response = model.generate_content(user_content)
                 text = response.text
                 
-                # --- FILTRE ET NETTOYAGE DU CODE ---
                 code = None
                 if "```python" in text:
                     match = re.search(r'```python(.*?)```', text, re.DOTALL)
                     if match:
                         code = match.group(1)
-                        # On retire le code de la réponse visible pour l'élève
-                        text = text.replace(match.group(0), "") 
+                        text = text.replace(match.group(0), "")
                 
-                # Affichage du texte (Formules LaTeX, Tableaux Markdown rendus automatiquement)
                 st.markdown(text)
-                
-                # Exécution et Affichage du Graphique
                 if code:
                     try:
-                        exec(code, {"plt": plt, "np": np, "st": st})
+                        exec_globals = {"plt": plt, "np": np, "st": st}
+                        try: 
+                            from rdkit import Chem
+                            from rdkit.Chem import Draw
+                            exec_globals["Chem"] = Chem
+                            exec_globals["Draw"] = Draw
+                        except: pass
+                        
+                        exec(code, exec_globals)
                         st.pyplot(plt.gcf())
                         plt.close()
                     except Exception as e:
-                        st.warning("Note : Le tracé graphique n'a pas pu être généré pour cette question spécifique.")
+                        st.warning(f"Erreur d'affichage : {e}")
 
-                # Sauvegarde dans l'historique
-                st.session_state.messages.append({
-                    "role": "assistant", 
-                    "display_text": text, 
-                    "figure_code": code
-                })
+                st.session_state.messages.append({"role": "assistant", "display_text": text, "figure_code": code})
                 
-                # Synthèse Vocale (Optionnelle)
                 try:
-                    # On nettoie le texte pour l'audio (retrait du LaTeX complexe)
                     clean_text = text.replace("*","").replace("$", "")
                     tts = gTTS(clean_text, lang='fr')
                     bio = io.BytesIO()
@@ -273,4 +229,4 @@ if prompt or img_file:
                 except: pass
 
             except Exception as e:
-                st.error("Une erreur de connexion est survenue. Veuillez réessayer.")
+                st.error(f"Erreur : {e}")
