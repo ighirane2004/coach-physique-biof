@@ -31,15 +31,11 @@ def get_images():
     return [f for f in os.listdir(DOSSIER_SCHEMAS) if f.lower().endswith(('.png','.jpg'))]
 
 def executer_code_python(code):
-    """Exécute le code généré par l'IA pour tracer des courbes"""
     try:
-        # On crée un espace vide pour les variables du code
         local_vars = {}
-        # On exécute le code (sécurisé basique)
         exec(code, {"plt": plt, "np": np, "st": st}, local_vars)
-        # On affiche le graphique actuel
         st.pyplot(plt.gcf()) 
-        plt.clf() # On nettoie pour le prochain graphique
+        plt.clf()
     except Exception as e:
         st.error(f"Erreur dans le tracé : {e}")
 
@@ -58,7 +54,7 @@ client = genai.Client(api_key=API_KEY)
 liste_imgs = get_images()
 txt_images = ", ".join(liste_imgs)
 
-# NOTE : Les guillemets sont bien fermés ci-dessous
+# --- ATTENTION : C'est ici que l'erreur se produisait ---
 SYSTEM_PROMPT = """
 Tu es un professeur de Physique-Chimie expert (Niveau Bac).
 
@@ -66,13 +62,10 @@ RÈGLES D'INTERACTION :
 1. Pédagogie : Ne donne pas la réponse sèche. Guide l'élève.
 2. Schémas : Si besoin, utilise [[AFFICHER:nom_image.png]] parmi : {images}.
 
-MODE "TRACEUR DE COURBES" (IMPORTANT) :
-Si l'élève demande de tracer une courbe, un graphe ou une simulation (ex: "trace une modulation", "montre la résonance"), tu dois GÉNÉRER UN CODE PYTHON.
-- Le code doit être entre trois accents graves.
-- Utilise 'numpy' (alias np) et 'matplotlib.pyplot' (alias plt).
-- Ne fais PAS de plt.show(), le système gère l'affichage.
-- Ajoute toujours des titres, légendes et grilles au graphique.
-- Exemple de format attendu pour le code :
+MODE "TRACEUR DE COURBES" :
+Si l'élève demande de tracer une courbe, génère un code Python entre ```python ... ```.
+Utilise 'numpy' (np) et 'matplotlib.pyplot' (plt).
+Exemple :
 ```python
 t = np.linspace(0, 0.01, 500)
 u = 5 * np.cos(2*np.pi*100*t)
