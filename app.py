@@ -101,7 +101,7 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 5. CERVEAU ---
+# --- 5. CERVEAU (Prompt amélioré pour les graphismes) ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -112,17 +112,18 @@ SYSTEM_PROMPT = f"""
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
 RÈGLES D'ACTION CRUCIALES :
-1. **CODE PYTHON OBLIGATOIRE MAIS CACHÉ** : 
-   - Si on demande un schéma ou des courbes, génère TOUJOURS le code Python entre ```python ... ```.
-   - Si tu dois tracer plusieurs régimes (ex: RLC), essaie de mettre tout dans UN SEUL bloc de code en utilisant `plt.show()` une seule fois à la fin, ou `plt.subplot`.
-   - Si tu fais plusieurs blocs, ce n'est pas grave, je les traiterai tous.
+1. **CODE PYTHON OBLIGATOIRE ET OPTIMISÉ** : 
+   - Si on demande un schéma ou des courbes, génère le code Python entre ```python ... ```.
+   - **VECTEURS (Important)** : Quand tu utilises `plt.quiver` pour des forces ou vitesses, N'UTILISE PAS l'échelle par défaut. Force une échelle visible.
+     -> Exemple : `plt.quiver(X, Y, U, V, angles='xy', scale_units='xy', scale=1, color='r')`. (Ajuste 'scale' : plus il est petit, plus la flèche est grande).
+   - **PROPORTIONS** : Pour la mécanique et l'optique, utilise TOUJOURS `plt.gca().set_aspect('equal', adjustable='box')` pour que le graphique ne soit pas déformé.
+   - **ZOOM** : Calcule toujours les limites (xlim, ylim) pour zoomer sur la partie intéressante du graphe, avec une petite marge. Ne laisse pas de grands espaces vides.
 
-2. **PAS D'IMAGES HALLUCINÉES** : 
-   - Ne mets JAMAIS de liens `![Alt](...)`.
+2. **PAS D'IMAGES HALLUCINÉES** : Ne mets JAMAIS de liens `![Alt](...)`.
 
-3. **CONTENU** :
-   - Chimie Orga : utilise `rdkit`.
-   - Maths : LaTeX ($...$).
+3. **CONTENU** : Chimie Orga avec `rdkit`, Maths en LaTeX ($...$).
+
+4. **SILENCE** : Ne dis pas "Voici le code". Affiche juste le résultat.
 """
 
 # --- 6. INTERFACE ---
@@ -145,14 +146,13 @@ if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
 
-# --- AFFICHAGE HISTORIQUE ROBUSTE ---
+# Affichage Historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
         if "image_data" in msg and msg["image_data"]: 
             st.image(msg["image_data"], width=300)
         
-        # On vérifie s'il y a une liste de codes à exécuter
         if "code_blocks" in msg and msg["code_blocks"]:
             for code in msg["code_blocks"]:
                 try:
@@ -163,12 +163,8 @@ for msg in st.session_state.messages:
                         exec_globals["Chem"] = Chem
                         exec_globals["Draw"] = Draw
                     except: pass
-                    
-                    # On exécute le code
                     exec(code, exec_globals)
-                    # On affiche la figure générée
                     st.pyplot(plt.gcf())
-                    # On nettoie pour le prochain graphique
                     plt.clf() 
                     plt.close()
                 except: pass
@@ -178,17 +174,14 @@ prompt = st.chat_input("Pose ta question...")
 
 if prompt or img_file:
     user_content = []
-    
     display_txt = prompt if prompt else "Analyse..."
     if prompt:
-        # Mémoire des 6 derniers messages
         history_context = "CONTEXTE (Rappel) :\n"
         recent_msgs = st.session_state.messages[-6:] 
         for msg in recent_msgs:
             role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
             clean_msg = msg["display_text"].replace("```python", "").replace("```", "")
             history_context += f"- {role_label} : {clean_msg}\n"
-        
         final_prompt_text = f"{history_context}\n\nQUESTION ACTUELLE : {prompt}"
         user_content.append(final_prompt_text)
     
@@ -211,20 +204,12 @@ if prompt or img_file:
                 response = model.generate_content(user_content)
                 text = response.text
                 
-                # --- NOUVELLE LOGIQUE DE NETTOYAGE (MULTI-BLOCS) ---
-                
-                # 1. On capture TOUS les blocs de code (pas juste le premier)
                 code_blocks = re.findall(r'```python(.*?)```', text, re.DOTALL)
-                
-                # 2. On supprime TOUS les blocs de code du texte visible
                 text_to_show = re.sub(r'```python.*?```', '', text, flags=re.DOTALL)
-                
-                # 3. On supprime les liens d'images brisés
                 text_to_show = re.sub(r'!\[.*?\]\(.*?\)', '', text_to_show)
                 
                 st.markdown(text_to_show)
                 
-                # 4. On exécute CHAQUE bloc de code trouvé
                 valid_codes = []
                 for code in code_blocks:
                     try:
@@ -235,20 +220,18 @@ if prompt or img_file:
                             exec_globals["Chem"] = Chem
                             exec_globals["Draw"] = Draw
                         except: pass
-                        
                         exec(code, exec_globals)
                         st.pyplot(plt.gcf())
-                        plt.clf() # Important : on vide la figure entre deux graphiques
+                        plt.clf()
                         plt.close()
                         valid_codes.append(code)
                     except Exception as e:
-                        # On n'affiche pas l'erreur à l'élève, on continue
                         pass
 
                 st.session_state.messages.append({
                     "role": "assistant", 
                     "display_text": text_to_show, 
-                    "code_blocks": valid_codes # On stocke la liste des codes
+                    "code_blocks": valid_codes
                 })
                 
                 try:
