@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 import re
-import json # <--- NOUVEL IMPORT IMPORTANT
+import json
 
 # --- IMPORTS CHIMIE ---
 try:
@@ -105,7 +105,7 @@ with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     user_lvl = st.session_state.user_level
     
-    # 1. Chargement de la dernière position connue
+    # Position
     memoire = charger_memoire()
     last_pos = memoire.get(st.session_state.user_id, {})
     
@@ -113,36 +113,49 @@ with st.sidebar:
     elif user_lvl in PROGRAMME: options_niveau = [user_lvl]
     else: st.stop()
     
-    # Calcul des index par défaut pour retrouver la position
     def get_index(liste, valeur):
         try: return liste.index(valeur)
         except: return 0
 
-    # Menu Niveau
     idx_niv = get_index(options_niveau, last_pos.get("niveau"))
     niveau = st.selectbox("1. Niveau", options_niveau, index=idx_niv)
     
-    # Menu Partie
     parties_dispo = list(PROGRAMME[niveau].keys()) if niveau in PROGRAMME else []
     idx_part = get_index(parties_dispo, last_pos.get("partie"))
     partie = st.selectbox("2. Chapitre", parties_dispo, index=idx_part)
     
-    # Menu Leçon
     lecons_dispo = PROGRAMME[niveau][partie] if partie in PROGRAMME[niveau] else []
     idx_lec = get_index(lecons_dispo, last_pos.get("lecon"))
     lecon = st.selectbox("3. Leçon", lecons_dispo, index=idx_lec)
     
-    # SAUVEGARDE AUTOMATIQUE DE LA POSITION ACTUELLE
     sauvegarder_position(st.session_state.user_id, niveau, partie, lecon)
     
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
-    
+
+    # --- NOUVEAUTÉ : PALETTE MATHÉMATIQUE ---
+    with st.expander("🧮 Clavier Mathématique"):
+        st.caption("Copiez un symbole et collez-le dans le chat.")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.code("Δ", language="text")
+        with c2: st.code("θ", language="text")
+        with c3: st.code("λ", language="text")
+        with c4: st.code("π", language="text")
+        
+        c5, c6, c7, c8 = st.columns(4)
+        with c5: st.code("vec(v)", language="text")
+        with c6: st.code("α", language="text")
+        with c7: st.code("Ω", language="text")
+        with c8: st.code("∞", language="text")
+        
+        st.caption("Ou tapez simplement : 'racine', 'alpha', 'delta'...")
+
+    st.divider()
     if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. CERVEAU (Prompt Validé) ---
+# --- 6. CERVEAU ---
 if mode == "🎓 Professeur":
     ROLE = "Tu es un Professeur expert et pédagogue."
 else:
@@ -152,15 +165,19 @@ SYSTEM_PROMPT = f"""
 {ROLE}
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
 
-RÈGLES D'ACTION CRUCIALES :
+RÈGLES D'ACTION :
 1. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande = Pas de code Python.
 2. **SI GRAPHIQUE DEMANDÉ** :
    - Génère le code entre ```python ... ``` et cache-le.
-   - **PROPORTIONS** : `plt.gca().set_aspect('equal', adjustable='datalim')` (trajectoires).
+   - **PROPORTIONS** : `plt.gca().set_aspect('equal', adjustable='datalim')` pour les trajectoires.
    - **ZOOM** : Calcule `plt.xlim` et `plt.ylim`.
    - **VECTEURS** : Adapte le paramètre `scale`.
-3. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
-4. **PAS D'IMAGES HALLUCINÉES**.
+3. **COMPRÉHENSION SOUPLE** :
+   - Si l'élève écrit "vec(v)", comprends $\\vec{{v}}$.
+   - Si l'élève écrit "delta", comprends $\\Delta$.
+   - Si l'élève écrit "racine de x", comprends $\\sqrt{{x}}$.
+4. **CONTENU** : Chimie Orga (`rdkit`), Maths ($\LaTeX$).
+5. **PAS D'IMAGES HALLUCINÉES**.
 """
 
 # --- 7. INTERFACE ---
@@ -179,19 +196,16 @@ with st.expander("📸 Envoyer une image", expanded=False):
 # Initialisation
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
-
-# Reset historique si changement de leçon
 if st.session_state.current_lecon != lecon:
     st.session_state.messages = []
     st.session_state.current_lecon = lecon
 
-# Affichage Historique
+# Historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["display_text"])
         if "image_data" in msg and msg["image_data"]: 
             st.image(msg["image_data"], width=300)
-        
         if "code_blocks" in msg and msg["code_blocks"]:
             for code in msg["code_blocks"]:
                 try:
@@ -217,7 +231,6 @@ if prompt or img_file:
     display_txt = prompt if prompt else "Analyse..."
     if prompt:
         history_context = "CONTEXTE (Rappel) :\n"
-        # 40 messages de mémoire
         recent_msgs = st.session_state.messages[-40:] 
         for msg in recent_msgs:
             role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
@@ -261,7 +274,6 @@ if prompt or img_file:
                             exec_globals["Chem"] = Chem
                             exec_globals["Draw"] = Draw
                         except: pass
-                        
                         exec(code, exec_globals)
                         st.pyplot(plt.gcf())
                         plt.clf()
