@@ -9,7 +9,7 @@ import math
 import re
 import json
 
-# --- IMPORTS CHIMIE ---
+# --- IMPORTS CHIMIE (Pour les molécules) ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
@@ -28,7 +28,7 @@ except:
     st.error("⚠️ Erreur : Clé API non configurée.")
     st.stop()
 
-# --- 2. PROGRAMME ---
+# --- 2. LE PROGRAMME (Vos PDF) ---
 PROGRAMME = {
     "2bac": {
         "Physique_1_Ondes": ["1_Ondes_progressives.pdf", "2_Ondes_periodiques.pdf", "3_Ondes_lumineuses.pdf"],
@@ -56,7 +56,15 @@ PROGRAMME = {
     }
 }
 
-# --- 3. SAUVEGARDE ---
+# --- 3. CATALOGUE VIDÉO (C'est ici que vous mettez vos liens !) ---
+VIDEOS_COURS = {
+    # Exemple : "Nom_du_PDF.pdf": "Lien_Youtube"
+    "1_Dipole_RC.pdf": "https://www.youtube.com/watch?v=ExempleChargeCondensateur",
+    "1_Ondes_progressives.pdf": "https://www.youtube.com/watch?v=ExempleOndeCorde",
+    # Complétez la liste au fur et à mesure...
+}
+
+# --- 4. SAUVEGARDE DE LA POSITION ---
 DB_FILE = "memoire_eleves.json"
 
 def charger_memoire():
@@ -71,7 +79,7 @@ def sauvegarder_position(user_id, niveau, partie, lecon):
     with open(DB_FILE, "w") as f:
         json.dump(data, f)
 
-# --- 4. AUTH ---
+# --- 5. AUTHENTIFICATION ---
 if "auth" not in st.session_state: 
     st.session_state.auth = False
     st.session_state.user_level = None
@@ -81,14 +89,14 @@ def login():
     try:
         users_db = st.secrets["auth"]["users"]
     except:
-        st.error("Erreur Secrets.")
+        st.error("Erreur : Fichier secrets.toml manquant ou mal configuré.")
         return
 
     if code_entre in users_db:
         st.session_state.auth = True
         st.session_state.user_id = code_entre
         st.session_state.user_level = users_db[code_entre]
-        st.toast(f"✅ Connecté : {st.session_state.user_level}")
+        st.toast(f"✅ Bienvenue {st.session_state.user_id} !")
     else:
         st.error("⛔ Code incorrect")
 
@@ -97,7 +105,7 @@ if not st.session_state.auth:
     st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 5. NAVIGATION & SIDEBAR ---
+# --- 6. NAVIGATION & MENU ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     user_lvl = st.session_state.user_level
@@ -105,6 +113,7 @@ with st.sidebar:
     memoire = charger_memoire()
     last_pos = memoire.get(st.session_state.user_id, {})
     
+    # Choix Niveau
     if user_lvl == "admin": options_niveau = list(PROGRAMME.keys())
     elif user_lvl in PROGRAMME: options_niveau = [user_lvl]
     else: st.stop()
@@ -116,10 +125,12 @@ with st.sidebar:
     idx_niv = get_index(options_niveau, last_pos.get("niveau"))
     niveau = st.selectbox("1. Niveau", options_niveau, index=idx_niv)
     
+    # Choix Chapitre
     parties_dispo = list(PROGRAMME[niveau].keys()) if niveau in PROGRAMME else []
     idx_part = get_index(parties_dispo, last_pos.get("partie"))
     partie = st.selectbox("2. Chapitre", parties_dispo, index=idx_part)
     
+    # Choix Leçon
     lecons_dispo = PROGRAMME[niveau][partie] if partie in PROGRAMME[niveau] else []
     idx_lec = get_index(lecons_dispo, last_pos.get("lecon"))
     lecon = st.selectbox("3. Leçon", lecons_dispo, index=idx_lec)
@@ -127,13 +138,14 @@ with st.sidebar:
     sauvegarder_position(st.session_state.user_id, niveau, partie, lecon)
     
     st.divider()
-    mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach"])
+    mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach Exercices"])
 
+    # Zone Audio
     st.markdown("### 🎤 Vocal")
-    audio_val = st.audio_input("Poser une question")
+    audio_val = st.audio_input("Parler au Professeur")
 
-    with st.expander("🧮 Clavier Math"):
-        st.caption("Copiez un symbole et collez-le.")
+    # Clavier Math
+    with st.expander("🧮 Symboles"):
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.code("Δ", language="text")
         with c2: st.code("θ", language="text")
@@ -150,42 +162,58 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. CERVEAU (Prompt Pédagogue) ---
+# --- 7. LE CERVEAU (PROMPT FINAL) ---
+video_actuelle = VIDEOS_COURS.get(lecon, "")
+
 if mode == "🎓 Professeur":
-    ROLE = "Tu es un Professeur expert et pédagogue."
-else:
-    ROLE = "Tu es un Coach Socratique." # On insiste sur le côté Coach
+    ROLE = "Tu es un Professeur Expert, calme et bienveillant."
+    CONSIGNE_SPECIFIQUE = """
+    🎯 TA MÉTHODE PÉDAGOGIQUE : "ZEN & CONSTRUCTIVISTE"
+    
+    1. **STYLE ZEN (CRUCIAL)** :
+       - Tes réponses doivent être **COURTES** (3 ou 4 phrases maximum à la fois).
+       - Ne déballe jamais un long texte. L'élève doit respirer.
+       - Une seule idée par message.
+    
+    2. **APPROCHE CONSTRUCTIVISTE (Pas à Pas)** :
+       - Ne donne jamais la définition d'emblée. Fais-la deviner.
+       - **Étape A (Observation)** : Montre un graphique (généré par Python) ou propose de regarder la vidéo ci-jointe (si dispo). Demande : "Que remarques-tu ?"
+       - **Étape B (Guidage)** : Si l'élève hésite, donne un petit indice. Valorise ses essais ("C'est une bonne piste, mais...").
+       - **Étape C (Conclusion)** : Une fois compris, donne la formule officielle (LaTeX).
+    
+    3. **LE MAÎTRE DES GRAPHES** :
+       - Si le sujet s'y prête (Cinétique, RC, Ondes...), trace d'abord la courbe avec Python AVANT d'expliquer. L'image parle plus que les mots.
+    """
+else: # Mode Coach
+    ROLE = "Tu es un Coach d'entraînement Socratique."
+    CONSIGNE_SPECIFIQUE = """
+    🎯 TA MISSION : AIDER SANS FAIRE À LA PLACE
+    1. L'élève envoie un exercice.
+    2. Ne donne JAMAIS la solution directe.
+    3. Pose des questions pour le débloquer ("Quelle est la première loi de Newton ici ?").
+    4. Sois bref et encourageant.
+    """
 
 SYSTEM_PROMPT = f"""
 {ROLE}
 CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
+LEÇON : {lecon}
+VIDÉO DU COURS : {video_actuelle}
 
-RÈGLES D'ACTION :
-1. **HORS SUJET (SÉCURITÉ)** : 
-   - Si la question ne concerne PAS la Physique, la Chimie ou les Maths, REFUSE FERMEMENT.
-   - Réponds : "Je suis un assistant spécialisé en Physique-Chimie. Je ne peux pas répondre à cette question."
+RÈGLES D'OR :
+1. **SÉCURITÉ** : Si hors-sujet (cuisine, jeux...), refuse poliment.
+2. **FORMAT** : Maths en LaTeX. Chimie Orga en 3D (RdKit).
+3. **COURTOISIE** : Sois patient, ne juge jamais.
+4. **BRIÈVETÉ** : Réponses courtes et digestes.
 
-2. **PÉDAGOGIE (INTERDICTION DE RÉSOUDRE)** :
-   - Si l'élève demande de résoudre un exercice ou envoie une image d'exercice : **REFUSE DE DONNER LA RÉPONSE DIRECTEMENT**.
-   - Dis plutôt : "Je suis là pour t'aider à comprendre, pas pour faire le devoir à ta place. Qu'est-ce que tu proposes comme première étape ?" ou "Quelle formule de ton cours pourrais-tu utiliser ici ?".
-   - **Mode Guidage** : Pose des questions, donne des indices (formules, rappels de cours).
-   - **Solution Finale** : Ne donne la solution complète qu'après **3 tentatives incorrectes** ou abandons explicites de l'élève.
-
-3. **PAS DE GRAPHIQUE NON SOLLICITÉ** : Pas de demande explicite = Pas de code.
-
-4. **SI GRAPHIQUE DEMANDÉ** :
-   - Génère le code entre ```python ... ``` et cache-le.
-   - **CHIMIE ORGA** : `rdkit` + `plt.imshow`. **PAS de IPython**.
-   - **PHYSIQUE** : `plt.gca().set_aspect('equal')`, `plt.xlim/ylim` manuel.
-
-5. **CONTENU** : Maths ($\LaTeX$).
-6. **PAS D'IMAGES HALLUCINÉES**.
+{CONSIGNE_SPECIFIQUE}
 """
 
-# --- 7. INTERFACE ---
+# --- 8. L'INTERFACE ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
 
-with st.expander("📸 Envoyer une image", expanded=False):
+# Zone d'image (Upload passif)
+with st.expander("📸 Envoyer une image (Exercice/Schéma)", expanded=False):
     tab_cam, tab_upl = st.tabs(["Caméra", "Fichier"])
     img_file = None
     with tab_cam:
@@ -195,7 +223,7 @@ with st.expander("📸 Envoyer une image", expanded=False):
         u = st.file_uploader("Upload", type=['png', 'jpg', 'jpeg'])
         if u: img_file = u
 
-# Initialisation
+# Initialisation Session
 if "messages" not in st.session_state: st.session_state.messages = []
 if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
 if st.session_state.current_lecon != lecon:
@@ -210,6 +238,7 @@ for msg in st.session_state.messages:
             st.image(msg["image_data"], width=300)
         if "code_blocks" in msg and msg["code_blocks"]:
             for code in msg["code_blocks"]:
+                # Exécution sécurisée du code Python généré (Graphiques/Chimie)
                 try:
                     exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
                     try: 
@@ -229,65 +258,92 @@ for msg in st.session_state.messages:
                 except: pass
 
 # --- ZONE DE SAISIE ---
-prompt = st.chat_input("Pose ta question ici...")
+prompt = st.chat_input("Votre réponse ou question...")
 
-# --- LOGIQUE ---
+# Bouton magique "Commencer le cours" (Apparaît si chat vide + Mode Prof)
+start_cours = False
+if mode == "🎓 Professeur" and len(st.session_state.messages) == 0:
+    if st.button("🚀 Commencer le cours interactif"):
+        start_cours = True
+
+# --- LOGIQUE DE TRAITEMENT (LINÉAIRE) ---
 input_a_traiter = False
 type_input = None
 
+# Détection Audio (Nouveau message seulement)
 if audio_val and ("last_audio" not in st.session_state or st.session_state.last_audio != audio_val):
     input_a_traiter = True
     type_input = "audio"
     st.session_state.last_audio = audio_val 
 
-if prompt:
+# Détection Texte
+if prompt and not start_cours:
     input_a_traiter = True
     type_input = "text"
 
-if img_file and not input_a_traiter:
-    st.toast("📸 Image chargée ! Posez votre question pour l'analyser.", icon="✅")
+# Détection Démarrage Auto
+if start_cours:
+    input_a_traiter = True
+    type_input = "text"
+    prompt = "Bonjour Professeur. Je suis prêt. Commençons par une observation ou une vidéo, étape par étape. Sois bref."
 
+# Notification image seule
+if img_file and not input_a_traiter:
+    st.toast("📸 Image chargée ! En attente de votre question...", icon="✅")
+
+# --- TRAITEMENT ET RÉPONSE IA ---
 if input_a_traiter:
     user_content = []
     display_txt = "Analyse..."
     
+    # 1. Préparation du contenu User
     if type_input == "text":
         display_txt = prompt
-        history_context = "CONTEXTE (Rappel) :\n"
+        # Contexte historique (Mémoire court terme)
+        history_context = "HISTORIQUE RÉCENT :\n"
         recent_msgs = st.session_state.messages[-40:] 
         for msg in recent_msgs:
             role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
             clean_msg = msg["display_text"].replace("```python", "").replace("```", "")
             history_context += f"- {role_label} : {clean_msg}\n"
-        final_prompt_text = f"{history_context}\n\nQUESTION ACTUELLE : {prompt}"
+        final_prompt_text = f"{history_context}\n\nACTUEL : {prompt}"
         user_content.append(final_prompt_text)
     
     elif type_input == "audio":
-        display_txt = "🎤 *Question vocale reçue*"
+        display_txt = "🎤 *Message vocal*"
         user_content.append({"mime_type": "audio/wav", "data": audio_val.getvalue()})
-        user_content.append("Réponds à ce message vocal. Utilise le contexte précédent si nécessaire.")
+        user_content.append("Réponds à ce message vocal.")
 
+    # Ajout Image si présente
     img_data = None
     if img_file:
         img_data = Image.open(img_file)
         user_content.append(img_data)
 
+    # 2. Affichage immédiat (User)
     st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
-    with st.chat_message("user"):
-        st.markdown(display_txt)
-        if img_data: st.image(img_data, width=300)
-        if type_input == "audio": st.audio(audio_val)
+    
+    if type_input != "text": # Pour Audio ou Image, on force l'affichage car chat_input ne le fait pas
+        with st.chat_message("user"):
+            st.markdown(display_txt)
+            if img_data: st.image(img_data, width=300)
+            if type_input == "audio": st.audio(audio_val)
+    elif start_cours: # Pour le démarrage auto
+        with st.chat_message("user"):
+            st.markdown(display_txt)
 
+    # 3. Génération Réponse (Assistant)
     with st.chat_message("assistant"):
-        with st.spinner("Réflexion..."):
+        with st.spinner("Le Professeur réfléchit..."):
             try:
                 model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
                 response = model.generate_content(user_content)
                 text = response.text
                 
+                # Extraction du code Python
                 code_blocks = re.findall(r'```python(.*?)```', text, re.DOTALL)
                 text_to_show = re.sub(r'```python.*?```', '', text, flags=re.DOTALL)
-                text_to_show = re.sub(r'!\[.*?\]\(.*?\)', '', text_to_show)
+                text_to_show = re.sub(r'!\[.*?\]\(.*?\)', '', text_to_show) # Nettoyage images markdown
                 
                 st.markdown(text_to_show)
                 
@@ -311,7 +367,7 @@ if input_a_traiter:
                         plt.close()
                         valid_codes.append(code)
                     except Exception as e:
-                        st.error(f"Erreur technique : {e}")
+                        st.error(f"Erreur d'affichage graphique : {e}")
 
                 st.session_state.messages.append({
                     "role": "assistant", 
@@ -320,4 +376,4 @@ if input_a_traiter:
                 })
 
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                st.error(f"Erreur de connexion : {e}")
