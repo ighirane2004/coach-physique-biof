@@ -1,0 +1,47 @@
+{
+  "1_Ondes_progressives.pdf": {
+    "titre_lecon": "Les Ondes Mécaniques Progressives",
+    "etapes": [
+      {
+        "id": 1,
+        "titre": "I. Introduction & Observation (Corde)",
+        "consigne_prof": "Commence par l'accroche. Demande à l'élève de regarder son PDF à la page 'Expérience 1 (Corde)'. Il y a un schéma ou un espace vide. Ton but : lui faire comprendre que la matière ne bouge pas.",
+        "action_ia": "PYTHON_CORDE",
+        "question_cle": "Regarde la simulation. Le point rouge (la matière) avance-t-il vers la droite avec la vague, ou monte-t-il juste vers le haut ?",
+        "reponse_attendue": "Il monte et descend / Il ne se déplace pas"
+      },
+      {
+        "id": 2,
+        "titre": "Définition de l'Onde (Texte à trous)",
+        "consigne_prof": "L'élève doit remplir la définition du paragraphe 1.2. Il doit trouver les mots 'Perturbation' et 'Élastique'.",
+        "action_ia": "AUCUNE",
+        "question_cle": "Sur ton cours, on définit l'onde. C'est la propagation d'une ... (quel mot ?) dans un milieu ... (quel mot ?).",
+        "reponse_attendue": "Perturbation / Élastique"
+      },
+      {
+        "id": 3,
+        "titre": "Types d'ondes (Transversale vs Longitudinale)",
+        "consigne_prof": "Utilise l'exemple du Ressort (Page 6/7 du PDF) pour faire la distinction. Compare la direction de la perturbation et la direction de propagation.",
+        "action_ia": "VIDEO_RESSORT",
+        "question_cle": "Pour le ressort, la déformation est parallèle à la propagation. Comment appelle-t-on ce type d'onde dans ton cours (Page 12) ?",
+        "reponse_attendue": "Longitudinale"
+      },
+      {
+        "id": 4,
+        "titre": "Propriété Fondamentale",
+        "consigne_prof": "C'est le point le plus important (Page 22). Transport d'énergie vs Matière.",
+        "action_ia": "AUCUNE",
+        "question_cle": "Regarde la remarque importante II.2.1. Une onde transporte de l'...... mais pas de ...... ?",
+        "reponse_attendue": "Énergie / Matière"
+      },
+      {
+        "id": 5,
+        "titre": "Le Retard Temporel (Tau)",
+        "consigne_prof": "Explique la formule du retard (Page 29).",
+        "action_ia": "PYTHON_RETARD",
+        "question_cle": "Le point M' refait le même mouvement que M, mais plus tard. Quelle est la formule qui lie le retard Tau, la distance MM' et la vitesse v ?",
+        "reponse_attendue": "Tau = MM' / v"
+      }
+    ]
+  }
+}
