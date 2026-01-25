@@ -9,7 +9,7 @@ import math
 import re
 import json
 
-# --- IMPORTS CHIMIE (Optionnel) ---
+# --- IMPORTS CHIMIE (Optionnel, ne plante pas si absent) ---
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
@@ -25,7 +25,7 @@ try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("⚠️ Erreur : Clé API non configurée dans les secrets.")
+    st.error("⚠️ Erreur : Clé API non configurée dans .streamlit/secrets.toml")
     st.stop()
 
 # --- 2. LE PROGRAMME (Vos PDF) ---
@@ -64,12 +64,12 @@ def charger_videos():
             try:
                 return json.load(f)
             except:
-                return {} # Si fichier mal écrit
-    return {} # Si fichier absent
+                return {} 
+    return {}
 
 VIDEOS_COURS = charger_videos()
 
-# --- 4. GESTION DE LA MÉMOIRE ---
+# --- 4. GESTION DE LA MÉMOIRE (Progression élève) ---
 DB_FILE = "memoire_eleves.json"
 
 def charger_memoire():
@@ -110,7 +110,7 @@ if not st.session_state.auth:
     st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 6. NAVIGATION ---
+# --- 6. NAVIGATION & SIDEBAR ---
 with st.sidebar:
     st.header(f"👤 {st.session_state.user_id}")
     user_lvl = st.session_state.user_level
@@ -118,7 +118,7 @@ with st.sidebar:
     memoire = charger_memoire()
     last_pos = memoire.get(st.session_state.user_id, {})
     
-    # Sélecteurs Niveau -> Chapitre -> Leçon
+    # Sélecteurs
     if user_lvl == "admin": options_niveau = list(PROGRAMME.keys())
     elif user_lvl in PROGRAMME: options_niveau = [user_lvl]
     else: st.stop()
@@ -164,34 +164,31 @@ with st.sidebar:
         st.session_state.auth = False
         st.rerun()
 
-# --- 7. LE CERVEAU (PROMPT PÉDAGOGIQUE v14) ---
-# Récupération de la vidéo si elle existe
+# --- 7. LE CERVEAU (PROMPT PÉDAGOGIQUE AMÉLIORÉ) ---
 video_actuelle = VIDEOS_COURS.get(lecon, "")
 
 if mode == "🎓 Professeur":
-    ROLE = "Tu es un Professeur Expert, pédagogue, calme et bienveillant."
+    ROLE = "Tu es un Professeur Expert, un excellent pédagogue qui sait raconter la science."
     CONSIGNE_SPECIFIQUE = """
-    🎯 TA MÉTHODE : "L'EXPERIENCE D'ABORD, LE MODÈLE ENSUITE"
+    🎯 TA MÉTHODE : "DONNER DU SENS AVANT D'ENSEIGNER"
     
-    Ton objectif est que l'élève construise le savoir. Ne donne pas la réponse, fais-la émerger.
+    Tu sais qu'un élève n'apprend que s'il comprend "Pourquoi on étudie ça".
+    
+    ### 1. L'ACCROCHE (LA SITUATION PROBLÈME)
+    - Ne commence JAMAIS par "Voici le cours".
+    - Commence TOUJOURS par une **Accroche du Quotidien** ou une question intrigante.
+    - Exemple (Ondes) : "As-tu déjà jeté un caillou dans l'eau ? Pourquoi les ronds s'agrandissent mais l'eau reste sur place ?"
+    - C'est seulement APRÈS avoir piqué sa curiosité que tu déroules le cours.
 
-    1. **PHASE 1 : LE RÉEL (Vidéo & Observation)**
-       - Vérifie si une vidéo est disponible dans le contexte.
-       - Si oui, dis : "Observons d'abord l'expérience." et affiche le lien.
-       - Demande : "Qu'observes-tu ?" avant de continuer.
+    ### 2. LA MÉTHODE ACTIVE (OBSERVATION -> MODÉLISATION)
+    - **Le Réel (Vidéo)** : Si une vidéo est dispo, dis : "Regardons ce qui se passe..." et affiche le lien. Demande ce qu'il observe.
+    - **La Passerelle Maths (Crucial)** : Aide-le à traduire l'observation en maths. "Cette droite qui passe par zéro, ça te rappelle y=ax ?".
+    - **La Simulation** : Si c'est dynamique, génère le code Python pour visualiser l'invisible.
 
-    2. **PHASE 2 : LA PASSERELLE MATHS-PHYSIQUE (CRUCIAL)**
-       - L'élève a souvent du mal à transférer ses outils mathématiques.
-       - **Cas de la Droite (Ohm, Cinétique)** : Si la courbe est une droite par l'origine, rappelle : "En maths, c'est y = ax. Ici, quelle grandeur physique joue le rôle de y ? et de x ?". Fais-lui trouver le coefficient directeur.
-       - **Cas des Outils Précoces (Log, Exp)** : Si le cours utilise le Logarithme (pH) ou l'Exponentielle (RC, Nucléaire) et que l'élève ne l'a pas vu en maths, fais un "Rappel Flash". Dis : "Voici l'outil magique dont tu as besoin aujourd'hui : ln(a*b)=ln(a)+ln(b)...".
-
-    3. **PHASE 3 : LE MODÈLE (Simulation Python)**
-       - OBLIGATOIRE si le phénomène est dynamique (mouvement, ondes, réaction).
-       - Génère le code Python (`matplotlib`) pour visualiser ce qui est invisible à l'œil nu (ex: tracer une sinusoïde, une exponentielle décroissante).
-       - Dis : "Maintenant, décortiquons cela avec une simulation."
-
-    4. **PHASE 4 : ZEN & BREF**
-       - Sois concis (3-4 phrases max). Avance notion par notion. Ne fatigue pas l'élève.
+    ### 3. TON STYLE
+    - Tu es un conteur passionnant.
+    - Tu assures la continuité entre les paragraphes.
+    - Tes réponses sont COURTES (Zen) pour laisser l'élève participer.
     """
 else: # Mode Coach
     ROLE = "Tu es un Coach d'entraînement Socratique."
@@ -211,8 +208,8 @@ VIDÉO DU COURS : {video_actuelle}
 
 RÈGLES D'OR :
 1. **SÉCURITÉ** : Si hors-sujet, refuse poliment.
-2. **FORMAT** : Maths en LaTeX. Chimie Orga en 3D (RdKit) si demandé.
-3. **COURTOISIE** : Sois patient.
+2. **FORMAT** : Maths en LaTeX. Chimie Orga en 3D (RdKit) si pertinent.
+3. **COURTOISIE** : Sois patient et encourageant.
 4. **BRIÈVETÉ** : Réponses courtes et digestes.
 
 {CONSIGNE_SPECIFIQUE}
@@ -267,10 +264,11 @@ for msg in st.session_state.messages:
 # --- ZONE DE SAISIE ---
 prompt = st.chat_input("Votre réponse ou question...")
 
-# Bouton magique "Commencer le cours" (Apparaît si chat vide + Mode Prof)
+# Bouton magique "Commencer le cours" (Seulement si chat vide + Mode Prof)
 start_cours = False
 if mode == "🎓 Professeur" and len(st.session_state.messages) == 0:
-    if st.button("🚀 Commencer le cours interactif"):
+    # Le bouton est là pour lancer la discussion
+    if st.button("🚀 Commencer le cours"):
         start_cours = True
 
 # --- LOGIQUE DE TRAITEMENT ---
@@ -286,10 +284,12 @@ if prompt and not start_cours:
     input_a_traiter = True
     type_input = "text"
 
+# Démarrage automatique naturel
 if start_cours:
     input_a_traiter = True
     type_input = "text"
-    prompt = "Bonjour Professeur. Je suis prêt. Commençons par le réel (observation/vidéo) et fais le lien avec les maths si nécessaire."
+    # Phrase naturelle de l'élève pour déclencher le Professeur
+    prompt = "Bonjour Professeur ! Je suis prêt, de quoi allons-nous parler aujourd'hui ?"
 
 if img_file and not input_a_traiter:
     st.toast("📸 Image chargée ! En attente de votre question...", icon="✅")
@@ -357,7 +357,7 @@ if input_a_traiter:
                         except: pass
                         exec(code, exec_globals)
                         st.pyplot(plt.gcf())
-                        plt.clf()
+                        plt.clf() 
                         plt.close()
                         valid_codes.append(code)
                     except Exception as e:
