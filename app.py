@@ -1,6 +1,7 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import io
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,14 +9,23 @@ import math
 import re
 import json
 
+# --- IMPORTS CHIMIE (Optionnel, ne plante pas si absent) ---
+try:
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+    from rdkit.Chem import rdDepictor
+    from rdkit.Chem.Draw import rdMolDraw2D
+except ImportError:
+    pass
+
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Coach Sciences", page_icon="⚛️", layout="wide")
+st.set_page_config(page_title="Coach Physique-Chimie", page_icon="⚛️", layout="wide")
 
 try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("⚠️ Clé API non configurée.")
+    st.error("⚠️ Erreur : Clé API non configurée dans .streamlit/secrets.toml")
     st.stop()
 
 # --- 2. LE PROGRAMME (Vos PDF) ---
@@ -46,184 +56,318 @@ PROGRAMME = {
     }
 }
 
-# --- 3. CHARGEMENT VIDÉOS ---
+# --- 3. CHARGEMENT DES VIDÉOS (Depuis le fichier externe videos.json) ---
 def charger_videos():
     fichier_videos = "videos.json"
     if os.path.exists(fichier_videos):
         with open(fichier_videos, "r", encoding="utf-8") as f:
-            try: return json.load(f)
-            except: return {}
+            try:
+                return json.load(f)
+            except:
+                return {} 
     return {}
 
 VIDEOS_COURS = charger_videos()
 
-# --- 4. AUTHENTIFICATION ---
-if "auth" not in st.session_state: st.session_state.auth = False
+# --- 4. GESTION DE LA MÉMOIRE (Progression élève) ---
+DB_FILE = "memoire_eleves.json"
+
+def charger_memoire():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def sauvegarder_position(user_id, niveau, partie, lecon):
+    data = charger_memoire()
+    data[user_id] = {"niveau": niveau, "partie": partie, "lecon": lecon}
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f)
+
+# --- 5. AUTHENTIFICATION ---
+if "auth" not in st.session_state: 
+    st.session_state.auth = False
+    st.session_state.user_level = None
 
 def login():
-    code = st.session_state.input_code.strip()
-    try: users = st.secrets["auth"]["users"]
-    except: st.error("Secrets non configurés"); return
-    
-    if code in users:
+    code_entre = st.session_state.input_code.strip()
+    try:
+        users_db = st.secrets["auth"]["users"]
+    except:
+        st.error("Erreur : Fichier secrets non configuré.")
+        return
+
+    if code_entre in users_db:
         st.session_state.auth = True
-        st.session_state.user_id = code
-        st.session_state.user_level = users[code]
+        st.session_state.user_id = code_entre
+        st.session_state.user_level = users_db[code_entre]
+        st.toast(f"✅ Bienvenue {st.session_state.user_id} !")
     else:
-        st.error("Code incorrect")
+        st.error("⛔ Code incorrect")
 
 if not st.session_state.auth:
     st.title("🔐 Espace Sciences")
     st.text_input("Code d'accès :", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 5. NAVIGATION ---
+# --- 6. NAVIGATION & SIDEBAR ---
 with st.sidebar:
-    st.header(f"Prof. {st.session_state.user_id}")
+    st.header(f"👤 {st.session_state.user_id}")
+    user_lvl = st.session_state.user_level
     
-    # Sélecteurs simples
-    niveau_options = list(PROGRAMME.keys())
-    niveau = st.selectbox("1. Niveau", niveau_options)
+    memoire = charger_memoire()
+    last_pos = memoire.get(st.session_state.user_id, {})
     
-    chapitre_options = list(PROGRAMME[niveau].keys())
-    partie = st.selectbox("2. Chapitre", chapitre_options)
+    # Sélecteurs
+    if user_lvl == "admin": options_niveau = list(PROGRAMME.keys())
+    elif user_lvl in PROGRAMME: options_niveau = [user_lvl]
+    else: st.stop()
     
-    lecon_options = PROGRAMME[niveau][partie]
-    lecon = st.selectbox("3. Leçon", lecon_options)
+    def get_index(liste, valeur):
+        try: return liste.index(valeur)
+        except: return 0
+
+    idx_niv = get_index(options_niveau, last_pos.get("niveau"))
+    niveau = st.selectbox("1. Niveau", options_niveau, index=idx_niv)
+    
+    parties_dispo = list(PROGRAMME[niveau].keys()) if niveau in PROGRAMME else []
+    idx_part = get_index(parties_dispo, last_pos.get("partie"))
+    partie = st.selectbox("2. Chapitre", parties_dispo, index=idx_part)
+    
+    lecons_dispo = PROGRAMME[niveau][partie] if partie in PROGRAMME[niveau] else []
+    idx_lec = get_index(lecons_dispo, last_pos.get("lecon"))
+    lecon = st.selectbox("3. Leçon", lecons_dispo, index=idx_lec)
+    
+    sauvegarder_position(st.session_state.user_id, niveau, partie, lecon)
     
     st.divider()
     mode = st.radio("Mode", ["🎓 Professeur", "🏋️ Coach Exercices"])
-    
-    if st.button("🗑️ Reset Chat"):
-        st.session_state.messages = []
-        st.rerun()
-    
+
+    st.markdown("### 🎤 Vocal")
+    audio_val = st.audio_input("Parler au Professeur")
+
+    # Clavier Math
+    with st.expander("🧮 Symboles"):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.code("Δ", language="text")
+        with c2: st.code("θ", language="text")
+        with c3: st.code("λ", language="text")
+        with c4: st.code("π", language="text")
+        c5, c6, c7, c8 = st.columns(4)
+        with c5: st.code("vec(v)", language="text")
+        with c6: st.code("α", language="text")
+        with c7: st.code("Ω", language="text")
+        with c8: st.code("∞", language="text")
+
+    st.divider()
     if st.button("Déconnexion"):
         st.session_state.auth = False
         st.rerun()
 
-# --- 6. LE CERVEAU (Prompt Pédagogique Validé) ---
-
-# Vérification présence vidéo
-lien_video = VIDEOS_COURS.get(lecon, "")
-instruction_video = ""
-if lien_video:
-    instruction_video = f"""
-    - UNE VIDÉO EST DISPO : {lien_video}.
-    - Tu DOIS proposer ce lien à l'élève dans la phase d'observation.
-    """
-else:
-    instruction_video = """
-    - PAS DE VIDÉO DISPO. Ne donne pas de lien YouTube.
-    - Utilise une description ou propose de générer un graphique Python.
-    """
+# --- 7. LE CERVEAU (PROMPT PÉDAGOGIQUE AMÉLIORÉ) ---
+video_actuelle = VIDEOS_COURS.get(lecon, "")
 
 if mode == "🎓 Professeur":
-    ROLE = "Tu es un Professeur Expert, pédagogue et bienveillant."
-    CONSIGNE = f"""
-    🎯 TA MÉTHODE : "SENS -> OBSERVATION -> MODÉLISATION"
+    ROLE = "Tu es un Professeur Expert, un excellent pédagogue qui sait raconter la science."
+    CONSIGNE_SPECIFIQUE = """
+    🎯 TA MÉTHODE : "DONNER DU SENS AVANT D'ENSEIGNER"
     
-    Tu dois construire le savoir avec l'élève. Ne donne pas tout le cours d'un bloc.
+    Tu sais qu'un élève n'apprend que s'il comprend "Pourquoi on étudie ça".
+    
+    ### 1. L'ACCROCHE (LA SITUATION PROBLÈME)
+    - Ne commence JAMAIS par "Voici le cours".
+    - Commence TOUJOURS par une **Accroche du Quotidien** ou une question intrigante.
+    - Exemple (Ondes) : "As-tu déjà jeté un caillou dans l'eau ? Pourquoi les ronds s'agrandissent mais l'eau reste sur place ?"
+    - C'est seulement APRÈS avoir piqué sa curiosité que tu déroules le cours.
 
-    1. **PHASE 1 : L'ACCROCHE (Situation Problème)**
-       - Commence toujours par "Bonjour".
-       - Pose une question simple sur le quotidien liée au sujet (ex: vagues, électricité maison).
-       - ATTENDS la réponse de l'élève.
+    ### 2. LA MÉTHODE ACTIVE (OBSERVATION -> MODÉLISATION)
+    - **Le Réel (Vidéo)** : Si une vidéo est dispo, dis : "Regardons ce qui se passe..." et affiche le lien. Demande ce qu'il observe.
+    - **La Passerelle Maths (Crucial)** : Aide-le à traduire l'observation en maths. "Cette droite qui passe par zéro, ça te rappelle y=ax ?".
+    - **La Simulation** : Si c'est dynamique, génère le code Python pour visualiser l'invisible.
 
-    2. **PHASE 2 : L'OBSERVATION**
-       {instruction_video}
-       - Demande ce que l'élève observe.
-
-    3. **PHASE 3 : LA PASSERELLE MATHS (Crucial)**
-       - AIDE l'élève à faire le lien Maths <-> Physique.
-       - Si c'est une droite : rappelle y=ax.
-       - Si c'est une courbe (exp, log) : donne l'outil mathématique simple.
-
-    4. **PHASE 4 : PYTHON (Visualisation)**
-       - Si le phénomène est complexe, GÉNÈRE LE CODE PYTHON (matplotlib) pour tracer la courbe.
-       - Ne demande pas la permission, fais-le si c'est utile.
-
-    RÈGLE : Sois concis. Une étape à la fois.
+    ### 3. TON STYLE
+    - Tu es un conteur passionnant.
+    - Tu assures la continuité entre les paragraphes.
+    - Tes réponses sont COURTES (Zen) pour laisser l'élève participer.
     """
-else:
-    ROLE = "Coach Socratique."
-    CONSIGNE = "Ne donne jamais la solution. Pose des questions pour guider l'élève."
+else: # Mode Coach
+    ROLE = "Tu es un Coach d'entraînement Socratique."
+    CONSIGNE_SPECIFIQUE = """
+    🎯 TA MISSION : AIDER SANS FAIRE À LA PLACE
+    1. L'élève envoie un exercice.
+    2. Ne donne JAMAIS la solution directe.
+    3. Pose des questions pour le débloquer ("Quelle est la formule du cours qui relie P et I ?").
+    4. Si l'élève se trompe 3 fois, donne la solution expliquée.
+    """
 
 SYSTEM_PROMPT = f"""
 {ROLE}
-CONTEXTE : Niveau {niveau}, Chapitre {partie}, Leçon {lecon}.
-{CONSIGNE}
-RÈGLES TECHNIQUES :
-- Maths en LaTeX.
-- Python via `matplotlib` uniquement (pas d'animation complexe, juste des graphes).
+CONTEXTE : Programme Marocain, Niveau {niveau}, Chapitre {partie}.
+LEÇON : {lecon}
+VIDÉO DU COURS : {video_actuelle}
+
+RÈGLES D'OR :
+1. **SÉCURITÉ** : Si hors-sujet, refuse poliment.
+2. **FORMAT** : Maths en LaTeX. Chimie Orga en 3D (RdKit) si pertinent.
+3. **COURTOISIE** : Sois patient et encourageant.
+4. **BRIÈVETÉ** : Réponses courtes et digestes.
+
+{CONSIGNE_SPECIFIQUE}
 """
 
-# --- 7. INTERFACE CHAT ---
+# --- 8. L'INTERFACE ---
 st.title(lecon.replace(".pdf", "").replace("_", " "))
 
-if "messages" not in st.session_state: st.session_state.messages = []
+with st.expander("📸 Envoyer une image (Exercice/Schéma)", expanded=False):
+    tab_cam, tab_upl = st.tabs(["Caméra", "Fichier"])
+    img_file = None
+    with tab_cam:
+        c = st.camera_input("Photo")
+        if c: img_file = c
+    with tab_upl:
+        u = st.file_uploader("Upload", type=['png', 'jpg', 'jpeg'])
+        if u: img_file = u
 
-# Affichage historique
+# Initialisation Session
+if "messages" not in st.session_state: st.session_state.messages = []
+if "current_lecon" not in st.session_state: st.session_state.current_lecon = lecon
+if st.session_state.current_lecon != lecon:
+    st.session_state.messages = []
+    st.session_state.current_lecon = lecon
+
+# Affichage Historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        if "code" in msg:
-            try:
-                exec(msg["code"], {"plt": plt, "np": np, "math": math, "st": st})
-                st.pyplot(plt.gcf())
-                plt.clf()
-            except: pass
+        st.markdown(msg["display_text"])
+        if "image_data" in msg and msg["image_data"]: 
+            st.image(msg["image_data"], width=300)
+        if "code_blocks" in msg and msg["code_blocks"]:
+            for code in msg["code_blocks"]:
+                try:
+                    exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
+                    try: 
+                        from rdkit import Chem
+                        from rdkit.Chem import Draw
+                        from rdkit.Chem import rdDepictor
+                        from rdkit.Chem.Draw import rdMolDraw2D
+                        exec_globals["Chem"] = Chem
+                        exec_globals["Draw"] = Draw
+                        exec_globals["rdDepictor"] = rdDepictor
+                        exec_globals["rdMolDraw2D"] = rdMolDraw2D
+                    except: pass
+                    exec(code, exec_globals)
+                    st.pyplot(plt.gcf())
+                    plt.clf() 
+                    plt.close()
+                except: pass
 
-# Zone de saisie
-prompt = st.chat_input("Votre message...")
+# --- ZONE DE SAISIE ---
+prompt = st.chat_input("Votre réponse ou question...")
 
-# Déclencheur automatique (Bouton invisible si chat vide)
+# Bouton magique "Commencer le cours" (Seulement si chat vide + Mode Prof)
 start_cours = False
 if mode == "🎓 Professeur" and len(st.session_state.messages) == 0:
-    # Lancement auto ou via bouton si besoin
+    # Le bouton est là pour lancer la discussion
     if st.button("🚀 Commencer le cours"):
         start_cours = True
 
-if prompt or start_cours:
-    user_text = prompt if prompt else "Bonjour Professeur, je suis prêt."
-    
-    if not start_cours:
-        st.session_state.messages.append({"role": "user", "content": user_text})
-        with st.chat_message("user"):
-            st.markdown(user_text)
+# --- LOGIQUE DE TRAITEMENT ---
+input_a_traiter = False
+type_input = None
 
-    # Réponse IA
+if audio_val and ("last_audio" not in st.session_state or st.session_state.last_audio != audio_val):
+    input_a_traiter = True
+    type_input = "audio"
+    st.session_state.last_audio = audio_val 
+
+if prompt and not start_cours:
+    input_a_traiter = True
+    type_input = "text"
+
+# Démarrage automatique naturel
+if start_cours:
+    input_a_traiter = True
+    type_input = "text"
+    # Phrase naturelle de l'élève pour déclencher le Professeur
+    prompt = "Bonjour Professeur ! Je suis prêt, de quoi allons-nous parler aujourd'hui ?"
+
+if img_file and not input_a_traiter:
+    st.toast("📸 Image chargée ! En attente de votre question...", icon="✅")
+
+# --- GÉNÉRATION ---
+if input_a_traiter:
+    user_content = []
+    display_txt = "Analyse..."
+    
+    if type_input == "text":
+        display_txt = prompt
+        history_context = "HISTORIQUE RÉCENT :\n"
+        recent_msgs = st.session_state.messages[-40:] 
+        for msg in recent_msgs:
+            role_label = "ÉLÈVE" if msg["role"] == "user" else "PROF"
+            clean_msg = msg["display_text"].replace("```python", "").replace("```", "")
+            history_context += f"- {role_label} : {clean_msg}\n"
+        final_prompt_text = f"{history_context}\n\nACTUEL : {prompt}"
+        user_content.append(final_prompt_text)
+    
+    elif type_input == "audio":
+        display_txt = "🎤 *Message vocal*"
+        user_content.append({"mime_type": "audio/wav", "data": audio_val.getvalue()})
+        user_content.append("Réponds à ce message vocal.")
+
+    img_data = None
+    if img_file:
+        img_data = Image.open(img_file)
+        user_content.append(img_data)
+
+    st.session_state.messages.append({"role": "user", "display_text": display_txt, "image_data": img_data})
+    
+    if type_input != "text" or start_cours:
+        with st.chat_message("user"):
+            st.markdown(display_txt)
+            if img_data: st.image(img_data, width=300)
+            if type_input == "audio": st.audio(audio_val)
+
     with st.chat_message("assistant"):
-        with st.spinner("Réflexion..."):
-            # Historique pour le contexte
-            history_text = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-10:]])
-            full_prompt = f"HISTORIQUE:\n{history_text}\n\nUSER: {user_text}"
-            
+        with st.spinner("Le Professeur réfléchit..."):
             try:
                 model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
-                response = model.generate_content(full_prompt)
-                text_resp = response.text
+                response = model.generate_content(user_content)
+                text = response.text
                 
-                # Extraction Code Python
-                code_match = re.search(r'```python(.*?)```', text_resp, re.DOTALL)
-                code_exec = None
+                code_blocks = re.findall(r'```python(.*?)```', text, re.DOTALL)
+                text_to_show = re.sub(r'```python.*?```', '', text, flags=re.DOTALL)
+                text_to_show = re.sub(r'!\[.*?\]\(.*?\)', '', text_to_show)
                 
-                clean_text = re.sub(r'```python.*?```', '', text_resp, flags=re.DOTALL)
+                st.markdown(text_to_show)
                 
-                st.markdown(clean_text)
-                
-                if code_match:
-                    code_exec = code_match.group(1)
+                valid_codes = []
+                for code in code_blocks:
                     try:
-                        exec(code_exec, {"plt": plt, "np": np, "math": math, "st": st})
+                        exec_globals = {"plt": plt, "np": np, "math": math, "st": st}
+                        try: 
+                            from rdkit import Chem
+                            from rdkit.Chem import Draw
+                            from rdkit.Chem import rdDepictor
+                            from rdkit.Chem.Draw import rdMolDraw2D
+                            exec_globals["Chem"] = Chem
+                            exec_globals["Draw"] = Draw
+                            exec_globals["rdDepictor"] = rdDepictor
+                            exec_globals["rdMolDraw2D"] = rdMolDraw2D
+                        except: pass
+                        exec(code, exec_globals)
                         st.pyplot(plt.gcf())
-                        plt.clf()
+                        plt.clf() 
+                        plt.close()
+                        valid_codes.append(code)
                     except Exception as e:
                         st.error(f"Erreur graphe : {e}")
-                
-                msg_data = {"role": "assistant", "content": clean_text}
-                if code_exec: msg_data["code"] = code_exec
-                st.session_state.messages.append(msg_data)
-                
+
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "display_text": text_to_show, 
+                    "code_blocks": valid_codes
+                })
+
             except Exception as e:
-                st.error(f"Erreur connexion : {e}")
+                st.error(f"Erreur de connexion : {e}")
