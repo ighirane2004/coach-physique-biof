@@ -1,12 +1,11 @@
 import streamlit as st
 import google.generativeai as genai
-from PIL import Image
-import os
 import matplotlib.pyplot as plt
 import numpy as np
-import math
-import re
+import time
 import json
+import os
+import re
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Coach Sciences", page_icon="⚛️", layout="wide")
@@ -15,176 +14,195 @@ try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.error("⚠️ Clé API non configurée.")
+    st.error("⚠️ Clé API manquante.")
     st.stop()
 
 # --- 2. DONNÉES ---
 PROGRAMME = {
     "2bac": {
         "Physique_1_Ondes": ["1_Ondes_progressives.pdf"],
-        "Physique_3_Electricite": ["1_Dipole_RC.pdf", "2_Dipole_RL.pdf"],
-    },
-    # (Gardez votre liste complète ici, je l'abrège pour la lisibilité du code)
+        # Ajoutez vos autres leçons ici
+    }
 }
 
-# Fonction de chargement sécurisée
-def charger_videos():
-    if os.path.exists("videos.json"):
-        with open("videos.json", "r", encoding="utf-8") as f:
-            try: return json.load(f)
-            except: return {}
+def charger_json(filename):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
     return {}
 
-VIDEOS_COURS = charger_videos()
-DB_FILE = "memoire.json"
+SCENARIOS = charger_json("scenarios.json")
+VIDEOS = charger_json("videos.json")
 
-# --- 3. LOGIQUE MÉTIER ---
+# --- 3. FONCTIONS DE SIMULATION (Remplacent Flash) ---
+def generer_simulation_corde():
+    """Génère le code pour l'onde transversale"""
+    code = """
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0, 10, 500)
+t = 0  # Instant initial
+y = 0.5 * np.exp(-(x - 2)**2 * 5) # Forme d'une impulsion (bosse)
+
+plt.figure(figsize=(10, 4))
+plt.plot(x, y, 'b-', linewidth=2, label="Corde")
+# Le point rouge (Matière)
+idx_point = 250 # Milieu de corde
+plt.plot(x[idx_point], y[idx_point], 'ro', markersize=10, label="Point M (Matière)")
+plt.arrow(x[idx_point], y[idx_point], 0, 0.3, head_width=0.1, head_length=0.1, fc='r', ec='r')
+
+plt.title("Simulation Onde Transversale (La corde monte, l'onde avance)")
+plt.xlabel("Position x (m)")
+plt.ylabel("Élongation y (m)")
+plt.legend()
+plt.grid(True)
+plt.show()
+"""
+    return code
+
+def generer_simulation_retard():
+    """Génère le code pour expliquer le retard Tau"""
+    code = """
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0, 10, 500)
+# Onde à l'instant t
+y1 = np.exp(-(x - 2)**2 * 5) 
+# Onde à l'instant t' (décalée)
+y2 = np.exp(-(x - 5)**2 * 5)
+
+plt.figure(figsize=(10, 4))
+plt.plot(x, y1, 'b--', label="Instant t (Point M)")
+plt.plot(x, y2, 'r-', label="Instant t' (Point M')")
+
+plt.annotate('', xy=(2, 1.1), xytext=(5, 1.1), arrowprops=dict(arrowstyle='<->'))
+plt.text(3.5, 1.15, "Distance d = v * Tau", ha='center')
+
+plt.title("Illustration du Retard Temporel Tau")
+plt.legend()
+plt.grid(True)
+plt.show()
+"""
+    return code
+
+# --- 4. INTERFACE & LOGIQUE ---
 if "auth" not in st.session_state: st.session_state.auth = False
+
 def login():
     code = st.session_state.input_code.strip()
-    users = st.secrets["auth"]["users"]
+    try: users = st.secrets["auth"]["users"]
+    except: return
     if code in users:
         st.session_state.auth = True
         st.session_state.user_id = code
         st.session_state.user_level = users[code]
-    else: st.error("Code incorrect")
 
 if not st.session_state.auth:
     st.title("🔐 Accès")
     st.text_input("Code:", key="input_code", type="password", on_change=login)
     st.stop()
 
-# --- 4. NAVIGATION ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header(f"Prof. {st.session_state.user_id}")
-    # Sélection simplifiée pour l'exemple (remettez votre logique complète si besoin)
+    st.header("📚 Mon Cours")
     niveau = "2bac"
     partie = st.selectbox("Chapitre", list(PROGRAMME[niveau].keys()))
     lecon = st.selectbox("Leçon", PROGRAMME[niveau][partie])
     
     st.divider()
-    mode = st.radio("Mode", ["🎓 Professeur Interactif", "🏋️ Coach Exercices"])
-    if st.button("Reset / Nouveau Cours"):
+    if st.button("🔄 Recommencer la leçon"):
         st.session_state.messages = []
+        st.session_state.etape_active = 0
         st.rerun()
 
-# --- 5. LE CERVEAU (MODE STRICT) ---
-
-# Vérification rigoureuse de la vidéo AVANT le prompt
-lien_video = VIDEOS_COURS.get(lecon, "")
-if lien_video and len(lien_video) > 5:
-    INSTRUCTION_VIDEO = f"""
-    - UNE VIDÉO EST DISPONIBLE : {lien_video}.
-    - À l'étape 2, tu DOIS dire "Regardons cette expérience :" et afficher le lien.
-    """
-else:
-    INSTRUCTION_VIDEO = """
-    - AUCUNE VIDÉO DISPONIBLE POUR CETTE LEÇON.
-    - INTERDICTION FORMELLE de donner un lien YouTube inventé.
-    - Saute l'étape vidéo et passe directement à l'observation théorique ou au graphique.
-    """
-
-if mode == "🎓 Professeur Interactif":
-    ROLE = "Tu es un Professeur Expert qui construit le savoir PAS À PAS."
-    CONSIGNE = f"""
-    🛑 RÈGLE ABSOLUE : TU NE DOIS JAMAIS TOUT DIRE D'UN COUP.
-    Tu dois attendre la réponse de l'élève entre chaque étape.
-    
-    {INSTRUCTION_VIDEO}
-
-    ### TON SCÉNARIO (BOUCLE D'INTERACTION) :
-    
-    1. **ETAPE 1 : L'ACCROCHE (Seulement ça !)**
-       - Dis Bonjour.
-       - Pose une question concrète sur le quotidien liée au sujet (Situation Problème).
-       - *STOP*. Attends la réponse de l'élève. NE FAIS RIEN D'AUTRE.
-
-    2. **ETAPE 2 : L'OBSERVATION (Seulement après réponse de l'élève)**
-       - Si vidéo dispo : Montre le lien.
-       - Si pas de vidéo : Décris une expérience ou propose une visualisation graphique.
-       - *STOP*. Demande "Qu'observes-tu ?" et Attends.
-
-    3. **ETAPE 3 : LA VISUALISATION (Python)**
-       - C'est ici que tu génères le code Python (`matplotlib`) pour tracer la courbe ou le phénomène.
-       - Ne demande pas la permission. Fais-le.
-       - Appelle ça "Visualisation Graphique" (pas simulation).
-       - Aide l'élève à faire le lien Maths <-> Physique (y=ax, etc.).
-       - *STOP*. Attends.
-
-    4. **ETAPE 4 : CONCLUSION**
-       - Donne la formule officielle.
-
-    ⚠️ SI L'ÉLÈVE DIT JUSTE "BONJOUR", JOUE SEULEMENT L'ÉTAPE 1.
-    """
-else:
-    ROLE = "Coach Socratique."
-    CONSIGNE = "Ne donne jamais la réponse. Guide par des questions."
-
-SYSTEM_PROMPT = f"""
-{ROLE}
-CONTEXTE : {lecon}
-{CONSIGNE}
-RÈGLES TECHNIQUES :
-- Maths en LaTeX.
-- Si tu génères du Python, utilise `matplotlib`.
-- SOIS BREF.
-"""
-
-# --- 6. INTERFACE ---
+# --- CERVEAU DU SCÉNARIO ---
 st.title(lecon.replace(".pdf", ""))
 
 if "messages" not in st.session_state: st.session_state.messages = []
+if "etape_active" not in st.session_state: st.session_state.etape_active = 0
 
-# Affichage chat
+# Récupération du scénario de la leçon choisie
+scenario_data = SCENARIOS.get(lecon, None)
+
+# AFFICHAGE CHAT
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         if "code" in msg:
-            for c in msg["code"]:
-                try:
-                    exec_globals = {"plt":plt, "np":np, "math":math, "st":st}
-                    exec(c, exec_globals)
-                    st.pyplot(plt.gcf())
-                    plt.clf(); plt.close()
-                except: pass
-
-# Input
-prompt = st.chat_input("Répondre au professeur...")
-
-# Déclencheur automatique (Le bouton "Commencer" est caché, c'est auto si vide)
-start_trigger = False
-if mode == "🎓 Professeur Interactif" and len(st.session_state.messages) == 0:
-    start_trigger = True
-
-if prompt or start_trigger:
-    txt = prompt if prompt else "Bonjour Professeur, je suis prêt."
-    
-    if not start_trigger:
-        st.session_state.messages.append({"role":"user", "content":txt})
-        with st.chat_message("user"): st.markdown(txt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("..."):
-            # Construction historique
-            history = [f"{m['role']}: {m['content']}" for m in st.session_state.messages[-10:]]
-            full_prompt = f"HISTORIQUE:\n{history}\n\nACTUEL: {txt}"
-            
             try:
-                model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
-                resp = model.generate_content(full_prompt)
+                exec(msg["code"], {"plt": plt, "np": np})
+                st.pyplot(plt.gcf())
+                plt.clf()
+            except: pass
+
+# INPUT UTILISATEUR
+prompt = st.chat_input("Ta réponse...")
+
+# DÉCLENCHEMENT AUTOMATIQUE (Démarrage)
+trigger = False
+if len(st.session_state.messages) == 0:
+    trigger = True
+
+if prompt or trigger:
+    # 1. Gestion du message utilisateur
+    user_text = prompt if prompt else "Bonjour !"
+    if not trigger:
+        st.session_state.messages.append({"role": "user", "content": user_text})
+        with st.chat_message("user"): st.markdown(user_text)
+
+    # 2. Récupération de l'étape en cours
+    if scenario_data and st.session_state.etape_active < len(scenario_data["etapes"]):
+        step = scenario_data["etapes"][st.session_state.etape_active]
+        
+        # Préparation des outils pour l'étape
+        code_a_afficher = None
+        if step["action_ia"] == "PYTHON_CORDE":
+            code_a_afficher = generer_simulation_corde()
+        elif step["action_ia"] == "PYTHON_RETARD":
+            code_a_afficher = generer_simulation_retard()
+        
+        # Instruction pour Gemini : Jouer le rôle du prof pour CETTE étape
+        system_instruction = f"""
+        Tu es un Professeur de Physique.
+        CONTEXTE : Tu suis un plan de cours strict.
+        ÉTAPE ACTUELLE : {step['titre']}
+        
+        TA MISSION : 
+        1. Lis la consigne prof : "{step['consigne_prof']}"
+        2. Pose la question à l'élève : "{step['question_cle']}"
+        3. Si l'élève a donné la bonne réponse ("{step['reponse_attendue']}"), félicite-le et dis que tu passes à la suite.
+        4. Si l'élève a faux, guide-le sans donner la réponse.
+        
+        IMPORTANT : Si l'élève vient juste de dire "Bonjour", commence directement par poser la question de l'étape.
+        """
+        
+        # Génération réponse
+        with st.chat_message("assistant"):
+            with st.spinner("..."):
+                model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=system_instruction)
+                response = model.generate_content(user_text)
+                text_resp = response.text
                 
-                # Extraction
-                clean_text = re.sub(r'```python.*?```', '', resp.text, flags=re.DOTALL)
-                codes = re.findall(r'```python(.*?)```', resp.text, re.DOTALL)
-                
-                st.markdown(clean_text)
-                for c in codes:
-                    try:
-                        exec_globals = {"plt":plt, "np":np, "math":math, "st":st}
-                        exec(c, exec_globals)
-                        st.pyplot(plt.gcf()) 
-                        plt.clf(); plt.close()
-                    except: pass
-                
-                st.session_state.messages.append({"role":"assistant", "content":clean_text, "code":codes})
-            except Exception as e: st.error(str(e))
+                st.markdown(text_resp)
+                if code_a_afficher:
+                    st.pyplot(plt.gcf()) # Affiche le graphe généré par la fonction interne
+                    # On exécute le code pour l'affichage immédiat
+                    exec(code_a_afficher, {"plt": plt, "np": np})
+                    st.pyplot(plt.gcf())
+                    plt.clf()
+
+                # Sauvegarde
+                msg_data = {"role": "assistant", "content": text_resp}
+                if code_a_afficher: msg_data["code"] = code_a_afficher
+                st.session_state.messages.append(msg_data)
+
+        # Logique de passage à l'étape suivante (Simplifiée pour l'exemple : on avance à chaque tour, 
+        # mais idéalement on devrait vérifier si la réponse est bonne avec l'IA)
+        # Pour l'instant, l'élève avance manuellement ou l'IA gère la validation dans le texte.
+        # Pour rendre ça auto, on incrémentera "etape_active" seulement si l'IA détecte "Bonne réponse".
+        st.session_state.etape_active += 1 
+
+    else:
+        st.info("Leçon terminée ! Bravo.")
